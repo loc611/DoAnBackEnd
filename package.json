@@ -4,8 +4,8 @@
   "description": "Backend API for a student management system",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
-    "dev": "nodemon app.js"
+    "start": "node server/server.js",
+    "dev": "cd server && npm run dev"
   },
   "dependencies": {
     "dotenv": "^10.0.0",
