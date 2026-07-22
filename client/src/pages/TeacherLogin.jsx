@@ -2,19 +2,32 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { BookOpen, Mail, Lock, ArrowLeft } from 'lucide-react';
+import api from '../services/api';
 
 const TeacherLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (email === 'teacher@school.edu.vn' && password === 'teacher123') {
-      localStorage.setItem('userRole', 'teacher');
+    setErrorMsg('');
+    try {
+      const response = await api.post('/auth/login', { email, password });
+      const { token, user } = response.data;
+      
+      if (user.role !== 'teacher') {
+         setErrorMsg('Tài khoản này không có quyền Giáo viên!');
+         return;
+      }
+
+      localStorage.setItem('token', token);
+      localStorage.setItem('userRole', user.role);
+      localStorage.setItem('userData', JSON.stringify(user));
       navigate('/');
-    } else {
-      alert('Tài khoản hoặc mật khẩu không chính xác! (Gợi ý: teacher@school.edu.vn / teacher123)');
+    } catch (err) {
+      setErrorMsg(err.response?.data?.message || 'Lỗi kết nối máy chủ');
     }
   };
 
@@ -39,6 +52,11 @@ const TeacherLogin = () => {
         </div>
 
         <div className="p-8">
+            {errorMsg && (
+                <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl text-center font-medium">
+                    {errorMsg}
+                </div>
+            )}
             <form onSubmit={handleLogin} className="space-y-6">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Email giáo viên</label>

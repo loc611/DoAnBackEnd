@@ -2,20 +2,32 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ShieldCheck, Mail, Lock, ArrowLeft } from 'lucide-react';
+import api from '../services/api';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    // Simulate real authentication
-    if (email === 'admin@school.edu.vn' && password === 'admin123') {
-      localStorage.setItem('userRole', 'admin');
+    setErrorMsg('');
+    try {
+      const response = await api.post('/auth/login', { email, password });
+      const { token, user } = response.data;
+      
+      if (user.role !== 'admin') {
+         setErrorMsg('Tài khoản này không có quyền Quản trị viên!');
+         return;
+      }
+
+      localStorage.setItem('token', token);
+      localStorage.setItem('userRole', user.role);
+      localStorage.setItem('userData', JSON.stringify(user));
       navigate('/');
-    } else {
-      alert('Tài khoản hoặc mật khẩu không chính xác! (Gợi ý: admin@school.edu.vn / admin123)');
+    } catch (err) {
+      setErrorMsg(err.response?.data?.message || 'Lỗi kết nối máy chủ');
     }
   };
 
@@ -40,6 +52,11 @@ const AdminLogin = () => {
         </div>
 
         <div className="p-8">
+            {errorMsg && (
+                <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl text-center font-medium">
+                    {errorMsg}
+                </div>
+            )}
             <form onSubmit={handleLogin} className="space-y-6">
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-2">Email quản trị</label>
