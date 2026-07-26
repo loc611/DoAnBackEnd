@@ -2,6 +2,12 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 const userSchema = new mongoose.Schema({
+    username: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true,
+    },
     email: {
         type: String,
         required: true,
@@ -12,26 +18,29 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
-    name: {
-        type: String,
-        required: true,
-    },
     role: {
         type: String,
         enum: ['admin', 'teacher', 'student'],
-        default: 'student',
+        required: true,
     },
-    phone: {
+    status: {
         type: String,
+        enum: ['active', 'inactive'],
+        default: 'active'
+    },
+    profileId: {
+        type: mongoose.Schema.Types.ObjectId,
+        // Ref will be dynamically resolved based on role, or we can just leave it unreferenced 
+        // since we know which collection to query based on role.
     }
 }, {
     timestamps: true
 });
 
 // Middleware to hash password before saving
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function() {
     if (!this.isModified('password')) {
-        next();
+        return;
     }
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
@@ -43,5 +52,4 @@ userSchema.methods.matchPassword = async function(enteredPassword) {
 };
 
 const User = mongoose.model('User', userSchema);
-
 export default User;

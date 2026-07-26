@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import User from './models/User.js';
+import Admin from './models/Admin.js';
+import Teacher from './models/Teacher.js';
+import Student from './models/Student.js';
 
 dotenv.config();
 
@@ -18,34 +21,78 @@ const seedData = async () => {
 
         // Clear existing data
         await User.deleteMany({});
-        console.log('Cleared existing users');
+        await Admin.deleteMany({});
+        await Teacher.deleteMany({});
+        await Student.deleteMany({});
+        console.log('Cleared existing data');
 
-        // Create Admin
-        const admin = new User({
+        // Create Master Admin
+        const masterAdmin = new User({
+            username: 'admin',
             email: 'admin@school.edu.vn',
             password: 'admin123',
-            name: 'Quản trị viên',
             role: 'admin',
+            status: 'active'
         });
-        await admin.save();
+        await masterAdmin.save();
 
-        // Create Teacher
-        const teacher = new User({
+        const adminProfile = new Admin({
+            userId: masterAdmin._id,
+            fullName: 'Super Admin',
+            phone: '0988888888'
+        });
+        await adminProfile.save();
+        
+        masterAdmin.profileId = adminProfile._id;
+        await masterAdmin.save();
+
+        // Create Demo Teacher
+        const demoTeacher = new User({
+            username: 'gv001',
             email: 'teacher@school.edu.vn',
             password: 'teacher123',
-            name: 'Nguyễn Văn Giáo Viên',
             role: 'teacher',
+            status: 'active'
         });
-        await teacher.save();
+        await demoTeacher.save();
 
-        // Create Student
-        const student = new User({
+        const teacherProfile = new Teacher({
+            userId: demoTeacher._id,
+            teacherCode: 'GV001',
+            fullName: 'Nguyễn Văn Giáo Viên',
+            gender: 'Nam',
+            subject: 'Toán Học',
+            department: 'Tổ Toán - Tin',
+            phone: '0977777777'
+        });
+        await teacherProfile.save();
+
+        demoTeacher.profileId = teacherProfile._id;
+        await demoTeacher.save();
+
+        // Create Demo Student
+        const demoStudent = new User({
+            username: 'hs001',
             email: 'student@school.edu.vn',
             password: 'student123',
-            name: 'Trần Học Sinh',
             role: 'student',
+            status: 'active'
         });
-        await student.save();
+        await demoStudent.save();
+
+        const studentProfile = new Student({
+            userId: demoStudent._id,
+            studentCode: 'HS001',
+            fullName: 'Trần Học Sinh',
+            gender: 'Nam',
+            classId: '10A1',
+            phone: '0966666666',
+            parentPhone: '0955555555'
+        });
+        await studentProfile.save();
+
+        demoStudent.profileId = studentProfile._id;
+        await demoStudent.save();
 
         console.log('Mock accounts created successfully!');
         process.exit();

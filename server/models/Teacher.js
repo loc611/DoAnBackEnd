@@ -1,13 +1,13 @@
 import mongoose from 'mongoose';
 
-const studentSchema = new mongoose.Schema({
+const teacherSchema = new mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true,
         unique: true
     },
-    studentCode: {
+    teacherCode: {
         type: String,
         required: true,
         unique: true
@@ -21,18 +21,18 @@ const studentSchema = new mongoose.Schema({
         enum: ['Nam', 'Nữ', 'Khác'],
         default: 'Nam'
     },
-    classId: {
-        type: String,
-    },
     phone: {
         type: String,
     },
-    parentPhone: {
+    subject: {
+        type: String,
+    },
+    department: {
         type: String,
     }
 }, {
     timestamps: true
 });
 
-const Student = mongoose.model('Student', studentSchema);
-export default Student;
+const Teacher = mongoose.model('Teacher', teacherSchema);
+export default Teacher;

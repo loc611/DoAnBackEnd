@@ -10,6 +10,7 @@ import Teachers from './pages/Teachers';
 import Subjects from './pages/Subjects';
 import Schedule from './pages/Schedule';
 import Grades from './pages/Grades';
+import UsersManagement from './pages/UsersManagement';
 
 function App() {
   return (
@@ -28,7 +29,12 @@ function App() {
           <Route path="subjects" element={<Subjects />} />
           <Route path="schedule" element={<Schedule />} />
           <Route path="grades" element={<Grades />} />
+          <Route path="users" element={<UsersManagement />} />
         </Route>
+        
+        {/* Redirect invalid routes */}
+        <Route path="/admin" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>
   );

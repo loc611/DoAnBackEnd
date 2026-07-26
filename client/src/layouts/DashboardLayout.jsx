@@ -12,7 +12,11 @@ import {
   Menu,
   X,
   UserCircle,
-  LogOut
+  LogOut,
+  Settings,
+  BellRing,
+  Shield,
+  LayoutList
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -36,11 +40,14 @@ const DashboardLayout = () => {
 
   const allMenuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/', roles: ['admin', 'teacher', 'student'] },
-    { icon: Users, label: 'Học sinh', path: '/students', roles: ['admin', 'teacher'] },
-    { icon: GraduationCap, label: 'Giáo viên', path: '/teachers', roles: ['admin', 'teacher'] },
-    { icon: BookOpen, label: 'Môn học', path: '/subjects', roles: ['admin'] },
-    { icon: Calendar, label: 'Thời khóa biểu', path: '/schedule', roles: ['admin', 'teacher', 'student'] },
+    { icon: Users, label: 'Quản lý học sinh', path: '/students', roles: ['admin', 'teacher'] },
+    { icon: GraduationCap, label: 'Quản lý giáo viên', path: '/teachers', roles: ['admin'] },
+    { icon: LayoutList, label: 'Quản lý lớp', path: '/classes', roles: ['admin'] },
+    { icon: BookOpen, label: 'Quản lý môn học', path: '/subjects', roles: ['admin'] },
     { icon: BookOpenCheck, label: 'Quản lý điểm', path: '/grades', roles: ['admin', 'teacher', 'student'] },
+    { icon: Shield, label: 'Quản lý tài khoản', path: '/users', roles: ['admin'] },
+    { icon: BellRing, label: 'Thông báo', path: '/notifications', roles: ['admin', 'teacher', 'student'] },
+    { icon: Settings, label: 'Cài đặt', path: '/settings', roles: ['admin'] },
   ];
 
   // Lọc menu theo quyền
