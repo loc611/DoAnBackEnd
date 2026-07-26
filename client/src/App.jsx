@@ -8,6 +8,9 @@ import Dashboard from './pages/Dashboard';
 import Students from './pages/Students';
 import Teachers from './pages/Teachers';
 import Subjects from './pages/Subjects';
+import Classes from './pages/Classes';
+import Notifications from './pages/Notifications';
+import Settings from './pages/Settings';
 import Schedule from './pages/Schedule';
 import Grades from './pages/Grades';
 import UsersManagement from './pages/UsersManagement';
@@ -26,10 +29,13 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="students" element={<Students />} />
           <Route path="teachers" element={<Teachers />} />
+          <Route path="classes" element={<Classes />} />
           <Route path="subjects" element={<Subjects />} />
           <Route path="schedule" element={<Schedule />} />
           <Route path="grades" element={<Grades />} />
           <Route path="users" element={<UsersManagement />} />
+          <Route path="notifications" element={<Notifications />} />
+          <Route path="settings" element={<Settings />} />
         </Route>
         
         {/* Redirect invalid routes */}
