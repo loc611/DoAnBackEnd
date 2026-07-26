@@ -1,5 +1,6 @@
 import Student from '../models/Student.js';
 import User from '../models/User.js';
+import mongoose from 'mongoose';
 
 // @desc    Get all students
 // @route   GET /api/students
@@ -8,12 +9,17 @@ export const getStudents = async (req, res) => {
     try {
         // If user is a student, only return their own record
         if (req.user.role === 'student') {
-            const student = await Student.findOne({ user: req.user.id }).populate('user', 'email');
+            const student = await Student.findOne({ userId: req.user.id })
+                .populate('userId', 'email status')
+                .populate('classId', 'className');
             return res.json(student ? [student] : []);
         }
         
         // Admin and Teacher can see all
-        const students = await Student.find({}).populate('user', 'email').sort({ createdAt: -1 });
+        const students = await Student.find({})
+            .populate('userId', 'email status')
+            .populate('classId', 'className')
+            .sort({ createdAt: -1 });
         res.json(students);
     } catch (error) {
         res.status(500).json({ message: 'Lỗi server khi lấy danh sách học sinh' });
@@ -24,46 +30,52 @@ export const getStudents = async (req, res) => {
 // @route   POST /api/students
 // @access  Private/Admin
 export const createStudent = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
     try {
-        const { studentId, name, gender, dob, className, phone } = req.body;
+        const { studentCode, fullName, gender, classId, phone, parentPhone } = req.body;
 
-        const studentExists = await Student.findOne({ studentId });
+        const studentExists = await Student.findOne({ studentCode }).session(session);
         if (studentExists) {
-            return res.status(400).json({ message: 'Mã học sinh đã tồn tại' });
+            throw new Error('Mã học sinh đã tồn tại');
         }
 
-        // 1. Create User account for the student
-        // Default email format: studentId@school.edu.vn, password: student123
-        const email = `${studentId.toLowerCase()}@school.edu.vn`;
+        // Generate email/username based on studentCode
+        const username = studentCode.toLowerCase();
+        const email = `${username}@school.edu.vn`;
         
-        const userExists = await User.findOne({ email });
+        const userExists = await User.findOne({ $or: [{ email }, { username }] }).session(session);
         if (userExists) {
-            return res.status(400).json({ message: 'Email tài khoản đã tồn tại' });
+            throw new Error('Tài khoản cho mã học sinh này đã tồn tại');
         }
 
-        const user = await User.create({
+        const newUser = await User.create([{
+            username,
             email,
             password: 'student123',
-            name,
             role: 'student',
-            phone
-        });
+            status: 'active'
+        }], { session });
 
-        // 2. Create Student profile
-        const student = await Student.create({
-            user: user._id,
-            studentId,
-            name,
-            gender,
-            dob,
-            className,
-            phone
-        });
+        const newStudent = await Student.create([{
+            userId: newUser[0]._id,
+            studentCode,
+            fullName,
+            gender: gender || 'Nam',
+            classId: classId || null,
+            phone,
+            parentPhone
+        }], { session });
 
-        res.status(201).json(student);
+        await session.commitTransaction();
+        session.endSession();
+
+        res.status(201).json(newStudent[0]);
     } catch (error) {
+        await session.abortTransaction();
+        session.endSession();
         console.error(error);
-        res.status(500).json({ message: 'Lỗi server khi tạo học sinh' });
+        res.status(400).json({ message: error.message || 'Lỗi server khi tạo học sinh' });
     }
 };
 
@@ -72,23 +84,18 @@ export const createStudent = async (req, res) => {
 // @access  Private/Admin
 export const updateStudent = async (req, res) => {
     try {
-        const { name, gender, dob, className, phone, status } = req.body;
+        const { fullName, gender, classId, phone, parentPhone } = req.body;
 
         const student = await Student.findById(req.params.id);
 
         if (student) {
-            student.name = name || student.name;
+            student.fullName = fullName || student.fullName;
             student.gender = gender || student.gender;
-            student.dob = dob || student.dob;
-            student.className = className || student.className;
+            student.classId = classId || student.classId;
             student.phone = phone || student.phone;
-            student.status = status || student.status;
+            student.parentPhone = parentPhone || student.parentPhone;
 
             const updatedStudent = await student.save();
-            
-            // Sync name and phone to User model
-            await User.findByIdAndUpdate(student.user, { name: updatedStudent.name, phone: updatedStudent.phone });
-
             res.json(updatedStudent);
         } else {
             res.status(404).json({ message: 'Không tìm thấy học sinh' });
@@ -102,20 +109,29 @@ export const updateStudent = async (req, res) => {
 // @route   DELETE /api/students/:id
 // @access  Private/Admin
 export const deleteStudent = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
     try {
-        const student = await Student.findById(req.params.id);
+        const student = await Student.findById(req.params.id).session(session);
 
         if (student) {
-            // Delete associated User account first
-            await User.findByIdAndDelete(student.user);
+            // Delete associated User account
+            if (student.userId) {
+                await User.findByIdAndDelete(student.userId).session(session);
+            }
             
             // Delete student profile
-            await student.deleteOne();
+            await Student.findByIdAndDelete(student._id).session(session);
+            
+            await session.commitTransaction();
+            session.endSession();
             res.json({ message: 'Đã xoá học sinh' });
         } else {
-            res.status(404).json({ message: 'Không tìm thấy học sinh' });
+            throw new Error('Không tìm thấy học sinh');
         }
     } catch (error) {
-        res.status(500).json({ message: 'Lỗi server khi xoá' });
+        await session.abortTransaction();
+        session.endSession();
+        res.status(500).json({ message: error.message || 'Lỗi server khi xoá' });
     }
 };
