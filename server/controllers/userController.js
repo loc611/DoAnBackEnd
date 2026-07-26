@@ -83,7 +83,7 @@ export const createUser = async (req, res) => {
                 studentCode: profileData.studentCode,
                 fullName: profileData.fullName,
                 gender: profileData.gender || 'Nam',
-                classId: profileData.classId,
+                classId: profileData.classId || null,
                 phone: profileData.phone,
                 parentPhone: profileData.parentPhone
             }], { session });
@@ -122,7 +122,7 @@ export const updateUser = async (req, res) => {
         } else if (user.role === 'teacher') {
             await Teacher.findOneAndUpdate({ userId: user._id }, { fullName, phone, department, subject, gender });
         } else if (user.role === 'student') {
-            await Student.findOneAndUpdate({ userId: user._id }, { fullName, phone, classId, parentPhone, gender });
+            await Student.findOneAndUpdate({ userId: user._id }, { fullName, phone, classId: classId || null, parentPhone, gender });
         }
 
         res.json({ message: 'Cập nhật thông tin thành công' });

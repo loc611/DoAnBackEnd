@@ -22,7 +22,9 @@ const studentSchema = new mongoose.Schema({
         default: 'Nam'
     },
     classId: {
-        type: String,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Class',
+        default: null
     },
     phone: {
         type: String,

@@ -9,6 +9,7 @@ import Students from './pages/Students';
 import Teachers from './pages/Teachers';
 import Subjects from './pages/Subjects';
 import Classes from './pages/Classes';
+import ClassDetails from './pages/ClassDetails';
 import Notifications from './pages/Notifications';
 import Settings from './pages/Settings';
 import Schedule from './pages/Schedule';
@@ -30,6 +31,7 @@ function App() {
           <Route path="students" element={<Students />} />
           <Route path="teachers" element={<Teachers />} />
           <Route path="classes" element={<Classes />} />
+          <Route path="classes/:id" element={<ClassDetails />} />
           <Route path="subjects" element={<Subjects />} />
           <Route path="schedule" element={<Schedule />} />
           <Route path="grades" element={<Grades />} />
