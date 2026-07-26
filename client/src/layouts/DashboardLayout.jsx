@@ -26,7 +26,13 @@ const SidebarItem = ({ icon: Icon, label, path, active, expanded }) => (
 const DashboardLayout = () => {
   const [expanded, setExpanded] = useState(true);
   const location = useLocation();
-  const userRole = localStorage.getItem('userRole') || 'student'; // Mặc định là student nếu chưa có
+  const userRole = localStorage.getItem('userRole') || 'student';
+  const userDataStr = localStorage.getItem('userData');
+  const userData = userDataStr ? JSON.parse(userDataStr) : null;
+  
+  const getUserName = () => userData?.name || (userRole === 'admin' ? 'Admin User' : userRole === 'teacher' ? 'Giáo viên' : 'Học sinh');
+  const getUserEmail = () => userData?.email || `${userRole}@school.edu.vn`;
+  const getRoleLabel = () => userRole === 'admin' ? 'Quản trị viên' : userRole === 'teacher' ? 'Giáo viên' : 'Học sinh';
 
   const allMenuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/', roles: ['admin', 'teacher', 'student'] },
@@ -75,15 +81,15 @@ const DashboardLayout = () => {
                 {expanded && (
                     <div className="overflow-hidden">
                         <p className="text-sm font-medium text-white truncate">
-                           {userRole === 'admin' ? 'Admin Văn Lang' : userRole === 'teacher' ? 'Giáo viên Demo' : 'Học sinh Demo'}
+                           {getUserName()}
                         </p>
                         <p className="text-xs text-gray-400 truncate">
-                           {userRole === 'admin' ? 'admin@school.edu.vn' : userRole === 'teacher' ? 'teacher@school.edu.vn' : 'student@school.edu.vn'}
+                           {getUserEmail()}
                         </p>
                     </div>
                 )}
             </div>
-            <Link to="/login" onClick={() => localStorage.removeItem('userRole')} className="flex items-center text-red-400 hover:text-red-300 transition-colors w-full px-2 py-2 rounded-lg hover:bg-gray-800">
+            <Link to="/login" onClick={() => { localStorage.removeItem('userRole'); localStorage.removeItem('token'); localStorage.removeItem('userData'); }} className="flex items-center text-red-400 hover:text-red-300 transition-colors w-full px-2 py-2 rounded-lg hover:bg-gray-800">
                 <LogOut size={20} className="min-w-[20px]" />
                 {expanded && <span className="ml-3 text-sm font-medium">Đăng xuất</span>}
             </Link>
@@ -112,8 +118,8 @@ const DashboardLayout = () => {
                 <div className="flex items-center space-x-2 cursor-pointer p-2 hover:bg-gray-50 rounded-lg">
                     <UserCircle size={32} className="text-gray-600" />
                     <div className="hidden md:block text-sm">
-                        <p className="font-semibold text-gray-700">Admin User</p>
-                        <p className="text-gray-500 text-xs">Quản trị viên</p>
+                        <p className="font-semibold text-gray-700">{getUserName()}</p>
+                        <p className="text-gray-500 text-xs">{getRoleLabel()}</p>
                     </div>
                 </div>
             </div>
