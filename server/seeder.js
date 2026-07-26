@@ -1,39 +1,53 @@
-import pkg from '@prisma/client';
-const { PrismaClient } = pkg;
-import bcrypt from 'bcryptjs';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+import User from './models/User.js';
 
-const prisma = new PrismaClient();
+dotenv.config();
 
-const seed = async () => {
-  try {
-    console.log('Seeding data to Neon PostgreSQL...');
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://quanlyhethonghocsinh:loc12345@cluster0.p1hkyuj.mongodb.net/student_management?appName=Cluster0';
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash('admin123', 10);
+const seedData = async () => {
+    try {
+        await mongoose.connect(MONGO_URI);
+        console.log('Connected to MongoDB Atlas for seeding');
 
-    // Upsert to ensure we don't duplicate on multiple runs
-    const admin = await prisma.user.upsert({
-      where: { email: 'admin@school.edu.vn' },
-      update: {},
-      create: {
-        email: 'admin@school.edu.vn',
-        password: hashedPassword,
-        name: 'Admin Văn Lang',
-        role: 'admin',
-      },
-    });
+        // Clear existing data
+        await User.deleteMany({});
+        console.log('Cleared existing users');
 
-    console.log('✅ Admin account seeded successfully!');
-    console.log(`Email: ${admin.email}`);
-    console.log(`Password: admin123`);
-    console.log(`Role: ${admin.role}`);
+        // Create Admin
+        const admin = new User({
+            email: 'admin@school.edu.vn',
+            password: 'admin123',
+            name: 'Quản trị viên',
+            role: 'admin',
+        });
+        await admin.save();
 
-  } catch (error) {
-    console.error('❌ Error seeding database:', error);
-    process.exit(1);
-  } finally {
-    await prisma.$disconnect();
-  }
+        // Create Teacher
+        const teacher = new User({
+            email: 'teacher@school.edu.vn',
+            password: 'teacher123',
+            name: 'Nguyễn Văn Giáo Viên',
+            role: 'teacher',
+        });
+        await teacher.save();
+
+        // Create Student
+        const student = new User({
+            email: 'student@school.edu.vn',
+            password: 'student123',
+            name: 'Trần Học Sinh',
+            role: 'student',
+        });
+        await student.save();
+
+        console.log('Mock accounts created successfully!');
+        process.exit();
+    } catch (error) {
+        console.error('Error with seed data:', error);
+        process.exit(1);
+    }
 };
 
-seed();
+seedData();

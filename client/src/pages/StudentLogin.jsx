@@ -32,7 +32,7 @@ const StudentLogin = () => {
   };
 
   return (
-    <div className="min-h-screen bg-blue-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-white flex items-center justify-center p-4">
       <Link to="/login" className="absolute top-6 left-6 flex items-center text-gray-600 hover:text-blue-600 transition-colors font-medium">
         <ArrowLeft size={20} className="mr-2" />
         Quay lại
@@ -44,11 +44,10 @@ const StudentLogin = () => {
         transition={{ duration: 0.5 }}
         className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden"
       >
-        <div className="bg-blue-600 p-8 text-center text-white relative overflow-hidden">
-           <div className="absolute top-0 left-0 w-full h-full opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
-           <GraduationCap size={64} className="mx-auto mb-4 relative z-10" />
-           <h2 className="text-2xl font-bold relative z-10">Cổng Học Sinh</h2>
-           <p className="text-blue-100 mt-2 text-sm relative z-10">Đăng nhập để xem điểm và lịch học</p>
+        <div className="bg-white p-8 pb-0 text-center relative overflow-hidden">
+           <GraduationCap size={48} className="mx-auto mb-4 text-blue-600" />
+           <h2 className="text-2xl font-bold text-gray-800">Cổng Học Sinh</h2>
+           <p className="text-gray-500 mt-2 text-sm">Đăng nhập để xem điểm và lịch học</p>
         </div>
 
         <div className="p-8">
