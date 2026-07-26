@@ -4,7 +4,12 @@ import User from './models/User.js';
 
 dotenv.config();
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://quanlyhethonghocsinh:loc12345@cluster0.p1hkyuj.mongodb.net/student_management?appName=Cluster0';
+const MONGO_URI = process.env.MONGO_URI;
+
+if (!MONGO_URI) {
+    console.error("Vui lòng thiết lập biến môi trường MONGO_URI trong file .env");
+    process.exit(1);
+}
 
 const seedData = async () => {
     try {

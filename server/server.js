@@ -20,7 +20,12 @@ app.get('/api/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://quanlyhethonghocsinh:loc12345@cluster0.p1hkyuj.mongodb.net/student_management?appName=Cluster0';
+const MONGO_URI = process.env.MONGO_URI;
+
+if (!MONGO_URI) {
+    console.error("CRITICAL ERROR: Bắt buộc phải khai báo MONGO_URI trong file .env");
+    process.exit(1);
+}
 
 mongoose.connect(MONGO_URI)
     .then(() => {
