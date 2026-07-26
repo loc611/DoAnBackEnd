@@ -1,51 +1,42 @@
 import mongoose from 'mongoose';
 
 const studentSchema = new mongoose.Schema({
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
     studentId: {
         type: String,
         required: true,
         unique: true
     },
-    fullName: {
+    name: {
         type: String,
         required: true
     },
     gender: {
         type: String,
         enum: ['Nam', 'Nữ', 'Khác'],
-        required: true
+        default: 'Nam'
     },
-    dateOfBirth: {
-        type: Date,
-        required: true
+    dob: {
+        type: String, // format: DD/MM/YYYY
     },
     className: {
         type: String,
-        required: true
-    },
-    email: {
-        type: String,
-        required: true
     },
     phone: {
-        type: String
-    },
-    address: {
-        type: String
+        type: String,
     },
     status: {
         type: String,
-        enum: ['Đang học', 'Bảo lưu', 'Đã tốt nghiệp', 'Đuổi học'],
         default: 'Đang học'
-    },
-    avatar: {
-        type: String,
-        default: 'https://cdn-icons-png.flaticon.com/512/149/149071.png'
-    },
-    notes: {
-        type: String
     }
-}, { timestamps: true });
+}, {
+    timestamps: true
+});
 
 const Student = mongoose.model('Student', studentSchema);
+
 export default Student;

@@ -1,29 +1,72 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Filter, Edit, Trash2, X } from 'lucide-react';
+import { Search, Plus, Filter, Edit, Trash2, X, Eye, EyeOff } from 'lucide-react';
+import api from '../services/api';
 
-const mockStudents = [
-  { id: 'HS001', name: 'Nguyễn Văn A', gender: 'Nam', dob: '15/05/2008', class: '10A1', phone: '0901234567', status: 'Đang học', password: 'student123' },
-  { id: 'HS002', name: 'Trần Thị B', gender: 'Nữ', dob: '22/08/2008', class: '10A2', phone: '0901234568', status: 'Đang học', password: 'student123' },
-  { id: 'HS003', name: 'Lê Hoàng C', gender: 'Nam', dob: '10/01/2007', class: '11B1', phone: '0901234569', status: 'Bảo lưu', password: 'student123' },
-  { id: 'HS004', name: 'Phạm Thu D', gender: 'Nữ', dob: '05/11/2007', class: '11B2', phone: '0901234570', status: 'Đang học', password: 'student123' },
-  { id: 'HS005', name: 'Hoàng Minh E', gender: 'Nam', dob: '18/03/2006', class: '12C1', phone: '0901234571', status: 'Đang học', password: 'student123' },
-];
+const StudentModal = ({ isOpen, onClose, student, onSubmit }) => {
+  const [formData, setFormData] = useState({
+    name: '',
+    studentId: '',
+    dob: '',
+    gender: 'Nam',
+    className: '',
+    phone: '',
+    status: 'Đang học',
+    block: 'Khối A' // Virtual field to filter classes
+  });
 
-import { Eye, EyeOff } from 'lucide-react';
+  useEffect(() => {
+    if (student) {
+      setFormData({
+        name: student.name || '',
+        studentId: student.studentId || '',
+        dob: student.dob || '',
+        gender: student.gender || 'Nam',
+        className: student.className || '',
+        phone: student.phone || '',
+        status: student.status || 'Đang học',
+        block: getBlockByClass(student.className) || 'Khối A'
+      });
+    } else {
+      setFormData({
+        name: '',
+        studentId: '',
+        dob: '',
+        gender: 'Nam',
+        className: '',
+        phone: '',
+        status: 'Đang học',
+        block: 'Khối A'
+      });
+    }
+  }, [student, isOpen]);
 
-const StudentModal = ({ isOpen, onClose, student }) => {
-  const [selectedBlock, setSelectedBlock] = useState('Khối A');
+  const getBlockByClass = (cls) => {
+    if (!cls) return 'Khối A';
+    if (cls.includes('A')) return 'Khối A';
+    if (cls.includes('B')) return 'Khối B';
+    if (cls.includes('C')) return 'Khối C';
+    if (cls.includes('D')) return 'Khối D';
+    return 'Khối A';
+  };
 
-  // Lọc danh sách lớp dựa trên Khối đã chọn
   const getClassesByBlock = () => {
-    switch (selectedBlock) {
+    switch (formData.block) {
       case 'Khối A': return ['10A1', '10A2', '11A1', '12A1'];
       case 'Khối B': return ['10B1', '10B2', '11B1', '12B1'];
       case 'Khối C': return ['10C1', '11C1', '12C1'];
       case 'Khối D': return ['10D1', '10D2', '11D1', '12D1'];
       default: return [];
     }
+  };
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit(formData);
   };
 
   if (!isOpen) return null;
@@ -45,26 +88,26 @@ const StudentModal = ({ isOpen, onClose, student }) => {
           </button>
         </div>
         
-        <form className="p-6">
+        <form className="p-6" onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Họ và tên</label>
-              <input type="text" defaultValue={student?.name} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all" placeholder="Nhập họ tên..." />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Họ và tên *</label>
+              <input type="text" name="name" value={formData.name} onChange={handleChange} required className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all" placeholder="Nhập họ tên..." />
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Mã học sinh (Tự động)</label>
-              <input type="text" defaultValue={student?.id} disabled className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-50 text-gray-500" placeholder="HS00..." />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Mã học sinh *</label>
+              <input type="text" name="studentId" value={formData.studentId} onChange={handleChange} required disabled={!!student} className={`w-full px-4 py-2 rounded-lg border border-gray-200 ${student ? 'bg-gray-50 text-gray-500' : 'focus:ring-2 focus:ring-blue-500'} outline-none`} placeholder="VD: HS001" />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Ngày sinh</label>
-              <input type="date" className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" />
+              <input type="date" name="dob" value={formData.dob} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Giới tính</label>
-              <select defaultValue={student?.gender} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
+              <select name="gender" value={formData.gender} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
                 <option value="Nam">Nam</option>
                 <option value="Nữ">Nữ</option>
                 <option value="Khác">Khác</option>
@@ -74,8 +117,9 @@ const StudentModal = ({ isOpen, onClose, student }) => {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Nguyện vọng (Khối)</label>
               <select 
-                value={selectedBlock}
-                onChange={(e) => setSelectedBlock(e.target.value)}
+                name="block"
+                value={formData.block}
+                onChange={handleChange}
                 className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none"
               >
                 <option value="Khối A">Khối A (Toán, Lý, Hóa)</option>
@@ -87,7 +131,7 @@ const StudentModal = ({ isOpen, onClose, student }) => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Phân Lớp</label>
-              <select defaultValue={student?.class} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
+              <select name="className" value={formData.className} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
                 <option value="">-- Chọn lớp --</option>
                 {getClassesByBlock().map(cls => (
                   <option key={cls} value={cls}>{cls}</option>
@@ -96,21 +140,27 @@ const StudentModal = ({ isOpen, onClose, student }) => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Số điện thoại phụ huynh</label>
-              <input type="text" defaultValue={student?.phone} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nhập số điện thoại..." />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Số điện thoại</label>
+              <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nhập số điện thoại..." />
             </div>
             
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Địa chỉ</label>
-              <input type="text" className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nhập địa chỉ..." />
-            </div>
+            {student && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Trạng thái</label>
+                  <select name="status" value={formData.status} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
+                    <option value="Đang học">Đang học</option>
+                    <option value="Bảo lưu">Bảo lưu</option>
+                    <option value="Đã nghỉ">Đã nghỉ</option>
+                  </select>
+                </div>
+            )}
           </div>
 
           <div className="mt-8 flex justify-end space-x-3">
             <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors font-medium">
               Hủy bỏ
             </button>
-            <button type="button" className="btn-primary px-5 py-2.5">
+            <button type="submit" className="btn-primary px-5 py-2.5">
               Lưu thông tin
             </button>
           </div>
@@ -121,11 +171,31 @@ const StudentModal = ({ isOpen, onClose, student }) => {
 };
 
 const Students = () => {
+  const [students, setStudents] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [visiblePasswords, setVisiblePasswords] = useState({});
+  const [loading, setLoading] = useState(true);
+  
   const userRole = localStorage.getItem('userRole') || 'student';
+
+  useEffect(() => {
+    fetchStudents();
+  }, []);
+
+  const fetchStudents = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/students');
+      setStudents(res.data);
+    } catch (err) {
+      console.error(err);
+      alert('Không thể tải danh sách học sinh!');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const togglePasswordVisibility = (id) => {
     setVisiblePasswords(prev => ({ ...prev, [id]: !prev[id] }));
@@ -140,6 +210,40 @@ const Students = () => {
     setSelectedStudent(null);
     setIsModalOpen(true);
   };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa học sinh này và tài khoản liên kết?')) {
+        try {
+            await api.delete(`/students/${id}`);
+            fetchStudents(); // Refresh data
+        } catch (err) {
+            console.error(err);
+            alert('Lỗi khi xoá học sinh!');
+        }
+    }
+  };
+
+  const handleModalSubmit = async (formData) => {
+      try {
+          if (selectedStudent) {
+              // Update
+              await api.put(`/students/${selectedStudent._id}`, formData);
+          } else {
+              // Create
+              await api.post('/students', formData);
+          }
+          setIsModalOpen(false);
+          fetchStudents(); // Refresh data
+      } catch (err) {
+          console.error(err);
+          alert(err.response?.data?.message || 'Có lỗi xảy ra khi lưu thông tin!');
+      }
+  };
+
+  const filteredStudents = students.filter(s => 
+      s.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      s.studentId?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
@@ -168,16 +272,13 @@ const Students = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="flex items-center space-x-2 w-full sm:w-auto">
-            <button className="flex items-center px-4 py-2.5 border border-gray-200 rounded-xl text-gray-600 hover:bg-gray-50 transition-colors text-sm font-medium w-full sm:w-auto justify-center">
-              <Filter size={18} className="mr-2" />
-              Lọc danh sách
-            </button>
-          </div>
         </div>
 
         {/* Table */}
         <div className="overflow-x-auto">
+          {loading ? (
+             <div className="p-8 text-center text-gray-500">Đang tải dữ liệu...</div>
+          ) : (
           <table className="w-full text-left text-sm text-gray-600">
             <thead className="bg-gray-50 text-gray-700 font-medium">
               <tr>
@@ -189,21 +290,27 @@ const Students = () => {
                 <th className="px-6 py-4 border-b border-gray-100">SĐT</th>
                 <th className="px-6 py-4 border-b border-gray-100">Trạng thái</th>
                 {userRole === 'admin' && (
-                  <th className="px-6 py-4 border-b border-gray-100">Mật khẩu</th>
+                  <th className="px-6 py-4 border-b border-gray-100">Tài khoản (Tự động)</th>
                 )}
                 <th className="px-6 py-4 border-b border-gray-100 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody>
-              {mockStudents.map((student, idx) => (
-                <tr key={student.id} className="hover:bg-blue-50/50 transition-colors border-b border-gray-50 last:border-0">
-                  <td className="px-6 py-4 font-medium text-blue-600">{student.id}</td>
+              {filteredStudents.length === 0 ? (
+                  <tr>
+                      <td colSpan={userRole === 'admin' ? 9 : 8} className="px-6 py-4 text-center text-gray-500">
+                          Không có dữ liệu học sinh nào.
+                      </td>
+                  </tr>
+              ) : filteredStudents.map((student) => (
+                <tr key={student._id} className="hover:bg-blue-50/50 transition-colors border-b border-gray-50 last:border-0">
+                  <td className="px-6 py-4 font-medium text-blue-600">{student.studentId}</td>
                   <td className="px-6 py-4 font-medium text-gray-800">{student.name}</td>
                   <td className="px-6 py-4">{student.gender}</td>
                   <td className="px-6 py-4">{student.dob}</td>
                   <td className="px-6 py-4">
                     <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-lg text-xs font-medium">
-                      {student.class}
+                      {student.className || 'Chưa xếp'}
                     </span>
                   </td>
                   <td className="px-6 py-4">{student.phone}</td>
@@ -215,53 +322,32 @@ const Students = () => {
                     </span>
                   </td>
                   {userRole === 'admin' && (
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded">
-                          {visiblePasswords[student.id] ? student.password : '••••••••'}
-                        </span>
-                        <button 
-                          onClick={() => togglePasswordVisibility(student.id)}
-                          className="text-gray-400 hover:text-blue-500 transition-colors"
-                        >
-                          {visiblePasswords[student.id] ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                      </div>
+                    <td className="px-6 py-4 text-xs text-gray-500">
+                      {student.user?.email || 'N/A'}<br/>
+                      <span className="text-blue-500">Pass: student123</span>
                     </td>
                   )}
                   <td className="px-6 py-4">
-                    <div className="flex justify-end space-x-2">
-                      <button onClick={() => handleEdit(student)} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Sửa">
-                        <Edit size={18} />
-                      </button>
-                      {userRole === 'admin' && (
-                        <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Xóa">
-                          <Trash2 size={18} />
-                        </button>
-                      )}
-                    </div>
+                    {userRole === 'admin' && (
+                        <div className="flex justify-end space-x-2">
+                            <button onClick={() => handleEdit(student)} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Sửa">
+                                <Edit size={18} />
+                            </button>
+                            <button onClick={() => handleDelete(student._id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Xóa">
+                                <Trash2 size={18} />
+                            </button>
+                        </div>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-        
-        {/* Pagination */}
-        <div className="p-4 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
-            <span>Hiển thị 1 đến 5 của 1,260 học sinh</span>
-            <div className="flex space-x-1">
-                <button className="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50">Trước</button>
-                <button className="px-3 py-1 rounded-lg bg-blue-600 text-white">1</button>
-                <button className="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50">2</button>
-                <button className="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50">3</button>
-                <button className="px-3 py-1 rounded-lg border border-gray-200 hover:bg-gray-50">Sau</button>
-            </div>
+          )}
         </div>
       </div>
-
       <AnimatePresence>
-        <StudentModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} student={selectedStudent} />
+        <StudentModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} student={selectedStudent} onSubmit={handleModalSubmit} />
       </AnimatePresence>
     </div>
   );
