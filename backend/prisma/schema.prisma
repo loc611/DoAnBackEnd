@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  email     String   @unique
+  password  String
+  role      String   // 'admin', 'teacher', 'student'
+  status    String   @default("active") // 'active', 'inactive'
+  
+  // Relations
+  admin     Admin?
+  teacher   Teacher?
+  student   Student?
+  notifications Notification[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Admin {
+  id       String @id @default(uuid())
+  userId   String @unique
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName String
+  phone    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Teacher {
+  id             String @id @default(uuid())
+  userId         String @unique
+  user           User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teacherCode    String @unique
+  fullName       String
+  phone          String?
+  specialization String?
+
+  // Relations
+  homeroomClasses Class[]
+  subjects        Subject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Student {
+  id          String @id @default(uuid())
+  userId      String @unique
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentCode String @unique
+  fullName    String
+  dateOfBirth DateTime?
+  gender      String?
+  address     String?
+  parentName  String?
+  parentPhone String?
+  
+  classId     String?
+  class       Class? @relation(fields: [classId], references: [id], onDelete: SetNull)
+
+  grades      Grade[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Class {
+  id              String @id @default(uuid())
+  className       String @unique
+  grade           Int
+  homeroomTeacherId String?
+  homeroomTeacher Teacher? @relation(fields: [homeroomTeacherId], references: [id], onDelete: SetNull)
+  academicYear    String
+
+  // Relations
+  students      Student[]
+  schedules     Schedule[]
+  grades        Grade[]
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Subject {
+  id          String @id @default(uuid())
+  subjectCode String @unique
+  name        String
+  credits     Int
+  type        String @default("Bắt buộc") // 'Bắt buộc', 'Tự chọn'
+  teacherId   String?
+  teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Grade {
+  id        String @id @default(uuid())
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId   String
+  class     Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  semester  String @default("HK1_2026")
+  
+  math      Float @default(0)
+  literature Float @default(0)
+  english   Float @default(0)
+  physics   Float @default(0)
+  chemistry Float @default(0)
+  it        Float @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, classId, semester])
+}
+
+model Schedule {
+  id        String @id @default(uuid())
+  classId   String
+  class     Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  semester  String @default("HK1_2026")
+  period    String
+  
+  monday    String @default("-")
+  tuesday   String @default("-")
+  wednesday String @default("-")
+  thursday  String @default("-")
+  friday    String @default("-")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([classId, semester, period])
+}
+
+model Notification {
+  id          String @id @default(uuid())
+  title       String
+  content     String
+  type        String @default("Thông báo chung")
+  
+  targetClassId String?
+  targetClass   Class? @relation(fields: [targetClassId], references: [id], onDelete: SetNull)
+  
+  createdById   String
+  createdBy     User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

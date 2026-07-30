@@ -1,21 +1,17 @@
 {
-  "name": "student-management-backend",
+  "name": "student-management-system",
   "version": "1.0.0",
-  "description": "Backend API for a student management system",
-  "main": "app.js",
+  "description": "Student management system with React frontend and Express backend",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
-    "start": "node server/server.js",
-    "dev": "cd server && npm run dev"
-  },
-  "dependencies": {
-    "dotenv": "^10.0.0",
-    "express": "^4.18.0",
-    "sqlite3": "^5.1.6"
+    "dev:frontend": "npm run dev -w frontend",
+    "dev:backend": "npm run dev -w backend",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
   },
   "devDependencies": {
-    "nodemon": "^2.0.0"
-  },
-  "engines": {
-    "node": ">=14"
+    "concurrently": "^8.2.2"
   }
 }

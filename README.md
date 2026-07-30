@@ -1,36 +1,31 @@
-# Student Management Backend
+# Student Management System
 
-Backend structure for a student management system using Express.js.
+A full-stack student management application featuring a React/Vite frontend and an Express/MongoDB backend.
 
-## Features
+## Project Structure
 
-- Express server setup
-- Student routes
-- Controller-service-model separation
-- Error handling middleware
+The project has been bundled into two main directories:
 
-## Getting started
+- `frontend/`: The React application using Vite and Tailwind CSS.
+- `backend/`: The Express API server using MongoDB.
 
-1. Install dependencies:
+## Getting Started
 
+1. **Install dependencies for all projects**:
+   In the root directory, run:
    ```bash
-   npm install
+   npm run install:all
    ```
 
-2. Start the server:
+2. **Environment Variables**:
+   Ensure you have a `.env` file in the `backend/` directory with `MONGO_URI` and any other required variables.
 
+3. **Start the application**:
+   To run both frontend and backend concurrently in development mode, run:
    ```bash
-   npm start
+   npm run dev
    ```
 
-3. Open `http://localhost:3000`
-
-## Project structure
-
-- `app.js` - application entry point
-- `src/routes` - request routes
-- `src/controllers` - request handlers
-- `src/services` - business logic
-- `src/models` - data structures / persistence layer
-- `src/middlewares` - shared middleware
-- `src/config` - environment and configuration
+   Alternatively, you can run them separately:
+   - Frontend: `npm run dev:frontend`
+   - Backend: `npm run dev:backend`
