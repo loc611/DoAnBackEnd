@@ -48,7 +48,7 @@ export const getClassById = async (req, res) => {
 
 export const createClass = async (req, res) => {
     try {
-        const { className, grade, schoolYear, homeroomTeacherId } = req.body;
+        const { className, grade, schoolYear, homeroomTeacherId, status } = req.body;
 
         const classExists = await prisma.class.findFirst({ where: { className } });
         if (classExists) {
@@ -69,7 +69,8 @@ export const createClass = async (req, res) => {
                 className,
                 grade: parseInt(grade) || 10,
                 academicYear: schoolYear || '2025-2026',
-                homeroomTeacherId: homeroomTeacherId || null
+                homeroomTeacherId: homeroomTeacherId || null,
+                status: status || 'active'
             }
         });
 
@@ -87,7 +88,7 @@ export const updateClass = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy lớp học' });
         }
 
-        const { className, homeroomTeacherId, schoolYear } = req.body;
+        const { className, homeroomTeacherId, schoolYear, status } = req.body;
 
         if (homeroomTeacherId && homeroomTeacherId !== classInfo.homeroomTeacherId) {
             const teacherAssigned = await prisma.class.findFirst({
@@ -106,7 +107,8 @@ export const updateClass = async (req, res) => {
             where: { id: req.params.id },
             data: {
                 className: className || undefined,
-                homeroomTeacherId: homeroomTeacherId !== undefined ? homeroomTeacherId : undefined
+                homeroomTeacherId: homeroomTeacherId !== undefined ? homeroomTeacherId : undefined,
+                status: status || undefined
             }
         });
 

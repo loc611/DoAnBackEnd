@@ -14,17 +14,19 @@ import { protect, authorize } from '../middlewares/authMiddleware.js';
 const router = express.Router();
 
 router.use(protect);
-router.use(authorize('admin')); // Chỉ admin quản lý lớp
 
+// GET routes: All authenticated users can view classes & student rosters
 router.get('/', getClasses);
-router.post('/', createClass);
-
 router.get('/:id', getClassById);
-router.put('/:id', updateClass);
-router.delete('/:id', deleteClass);
-
 router.get('/:id/students', getStudentsInClass);
-router.post('/:id/students', addStudentsToClass);
-router.delete('/:id/students/:studentId', removeStudentFromClass);
+
+// Mutation routes: Only Admin can modify
+router.post('/', authorize('admin'), createClass);
+router.put('/:id', authorize('admin'), updateClass);
+router.delete('/:id', authorize('admin'), deleteClass);
+
+router.post('/:id/students', authorize('admin'), addStudentsToClass);
+router.delete('/:id/students/:studentId', authorize('admin'), removeStudentFromClass);
 
 export default router;
+

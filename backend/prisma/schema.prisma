@@ -1,11 +1,16 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
   provider = "postgresql"
+  schemas  = ["admin", "teacher", "student", "public"]
 }
 
+// ==========================================
+// 👑 SCHEMA: admin
+// ==========================================
 model User {
   id        String   @id @default(uuid())
   username  String   @unique
@@ -15,13 +20,15 @@ model User {
   status    String   @default("active") // 'active', 'inactive'
   
   // Relations
-  admin     Admin?
-  teacher   Teacher?
-  student   Student?
+  admin         Admin?
+  teacher       Teacher?
+  student       Student?
   notifications Notification[]
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@schema("admin")
 }
 
 model Admin {
@@ -33,8 +40,47 @@ model Admin {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@schema("admin")
 }
 
+model FeeProfile {
+  id           String     @id @default(uuid())
+  name         String
+  amount       Float
+  targetGrades Int[]      // Array of grades, e.g., [10, 11, 12]
+  academicYear String     // e.g., "2026-2027"
+  semester     String     // e.g., "HK1" or "All"
+  
+  feeBills     FeeBill[]
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@schema("admin")
+}
+
+model FeeBill {
+  id           String     @id @default(uuid())
+  feeProfileId String
+  feeProfile   FeeProfile @relation(fields: [feeProfileId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  status       String     @default("unpaid") // 'unpaid', 'paid'
+  dueDate      DateTime?
+  paidAt       DateTime?
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([feeProfileId, studentId])
+  @@schema("admin")
+}
+
+// ==========================================
+// 🧑‍🏫 SCHEMA: teacher
+// ==========================================
 model Teacher {
   id             String @id @default(uuid())
   userId         String @unique
@@ -50,36 +96,17 @@ model Teacher {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}
 
-model Student {
-  id          String @id @default(uuid())
-  userId      String @unique
-  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  studentCode String @unique
-  fullName    String
-  dateOfBirth DateTime?
-  gender      String?
-  address     String?
-  parentName  String?
-  parentPhone String?
-  
-  classId     String?
-  class       Class? @relation(fields: [classId], references: [id], onDelete: SetNull)
-
-  grades      Grade[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@schema("teacher")
 }
 
 model Class {
-  id              String @id @default(uuid())
-  className       String @unique
-  grade           Int
+  id                String @id @default(uuid())
+  className         String @unique
+  grade             Int
   homeroomTeacherId String?
-  homeroomTeacher Teacher? @relation(fields: [homeroomTeacherId], references: [id], onDelete: SetNull)
-  academicYear    String
+  homeroomTeacher   Teacher? @relation(fields: [homeroomTeacherId], references: [id], onDelete: SetNull)
+  academicYear      String
 
   // Relations
   students      Student[]
@@ -89,6 +116,9 @@ model Class {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  status    String   @default("active")
+
+  @@schema("teacher")
 }
 
 model Subject {
@@ -102,6 +132,36 @@ model Subject {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@schema("teacher")
+}
+
+// ==========================================
+// 🎓 SCHEMA: student
+// ==========================================
+model Student {
+  id          String @id @default(uuid())
+  userId      String @unique
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentCode String @unique
+  fullName    String
+  dateOfBirth DateTime?
+  gender      String?
+  address     String?
+  phone       String?
+  parentName  String?
+  parentPhone String?
+  
+  classId     String?
+  class       Class? @relation(fields: [classId], references: [id], onDelete: SetNull)
+
+  grades      Grade[]
+  feeBills    FeeBill[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@schema("student")
 }
 
 model Grade {
@@ -123,6 +183,7 @@ model Grade {
   updatedAt DateTime @updatedAt
 
   @@unique([studentId, classId, semester])
+  @@schema("student")
 }
 
 model Schedule {
@@ -142,6 +203,7 @@ model Schedule {
   updatedAt DateTime @updatedAt
 
   @@unique([classId, semester, period])
+  @@schema("student")
 }
 
 model Notification {
@@ -158,4 +220,7 @@ model Notification {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@schema("student")
 }
+

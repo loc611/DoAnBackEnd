@@ -19,8 +19,21 @@ export const login = async (req, res) => {
             },
             include: {
                 admin: true,
-                teacher: true,
-                student: true
+                teacher: {
+                    include: {
+                        homeroomClasses: true,
+                        subjects: true
+                    }
+                },
+                student: {
+                    include: {
+                        class: {
+                            include: {
+                                homeroomTeacher: true
+                            }
+                        }
+                    }
+                }
             }
         });
 
@@ -45,19 +58,36 @@ export const login = async (req, res) => {
             { expiresIn: '1d' }
         );
 
+        const userData = {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            role: user.role,
+            name: profile ? profile.fullName : user.username,
+            profileId: profile ? profile.id : null,
+            phone: profile?.phone || '',
+            // Student specific fields
+            classId: user.student ? user.student.classId : null,
+            className: user.student?.class?.className || null,
+            studentCode: user.student ? user.student.studentCode : null,
+            homeroomTeacher: user.student?.class?.homeroomTeacher ? user.student.class.homeroomTeacher.fullName : null,
+            dateOfBirth: user.student?.dateOfBirth || null,
+            gender: user.student?.gender || null,
+            address: user.student?.address || null,
+            parentName: user.student?.parentName || null,
+            parentPhone: user.student?.parentPhone || null,
+            // Teacher specific fields
+            teacherCode: user.teacher ? user.teacher.teacherCode : null,
+            specialization: user.teacher ? user.teacher.specialization : null,
+            homeroomClasses: user.teacher ? user.teacher.homeroomClasses : [],
+            subjects: user.teacher ? user.teacher.subjects : [],
+            profileData: profile
+        };
+
         res.json({
             message: 'Đăng nhập thành công',
             token,
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                role: user.role,
-                name: profile ? profile.fullName : user.username,
-                profileId: profile ? profile.id : null,
-                classId: user.student ? user.student.classId : null,
-                studentCode: user.student ? user.student.studentCode : null,
-            }
+            user: userData
         });
     } catch (error) {
         console.error('Login error:', error);
@@ -71,8 +101,21 @@ export const getMe = async (req, res) => {
             where: { id: req.user.id },
             include: {
                 admin: true,
-                teacher: true,
-                student: true
+                teacher: {
+                    include: {
+                        homeroomClasses: true,
+                        subjects: true
+                    }
+                },
+                student: {
+                    include: {
+                        class: {
+                            include: {
+                                homeroomTeacher: true
+                            }
+                        }
+                    }
+                }
             }
         });
         
@@ -86,15 +129,32 @@ export const getMe = async (req, res) => {
 
         let profile = user.admin || user.teacher || user.student;
 
+        const userData = {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            role: user.role,
+            name: profile ? profile.fullName : user.username,
+            profileId: profile ? profile.id : null,
+            phone: profile?.phone || '',
+            classId: user.student ? user.student.classId : null,
+            className: user.student?.class?.className || null,
+            studentCode: user.student ? user.student.studentCode : null,
+            homeroomTeacher: user.student?.class?.homeroomTeacher ? user.student.class.homeroomTeacher.fullName : null,
+            dateOfBirth: user.student?.dateOfBirth || null,
+            gender: user.student?.gender || null,
+            address: user.student?.address || null,
+            parentName: user.student?.parentName || null,
+            parentPhone: user.student?.parentPhone || null,
+            teacherCode: user.teacher ? user.teacher.teacherCode : null,
+            specialization: user.teacher ? user.teacher.specialization : null,
+            homeroomClasses: user.teacher ? user.teacher.homeroomClasses : [],
+            subjects: user.teacher ? user.teacher.subjects : [],
+            profileData: profile
+        };
+
         res.json({ 
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                role: user.role,
-                name: profile ? profile.fullName : user.username,
-                profileData: profile
-            }
+            user: userData
         });
     } catch (error) {
         res.status(500).json({ message: 'Lỗi server' });

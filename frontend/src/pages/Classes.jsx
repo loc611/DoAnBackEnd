@@ -6,8 +6,8 @@ import { Search, Plus, Edit, Trash2, X, Eye, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 
-const ClassFormModal = ({ isOpen, onClose, classData, onSuccess }) => {
-    const { register, handleSubmit, reset } = useForm();
+const ClassFormModal = ({ isOpen, onClose, classData, onSuccess, allClasses }) => {
+    const { register, handleSubmit, reset, watch } = useForm();
     const [loading, setLoading] = useState(false);
     const [teachers, setTeachers] = useState([]);
 
@@ -16,22 +16,18 @@ const ClassFormModal = ({ isOpen, onClose, classData, onSuccess }) => {
             fetchTeachers();
             if (classData) {
                 reset({
-                    classCode: classData.classCode,
                     className: classData.className,
                     grade: classData.grade,
-                    schoolYear: classData.schoolYear,
-                    homeroomTeacher: classData.homeroomTeacher?.id || '',
-                    description: classData.description || '',
-                    status: classData.status
+                    schoolYear: classData.academicYear || '2025-2026',
+                    homeroomTeacherId: classData.homeroomTeacher?.id || '',
+                    status: classData.status || 'active'
                 });
             } else {
                 reset({
-                    classCode: '',
                     className: '',
                     grade: '10',
-                    schoolYear: '2023-2024',
-                    homeroomTeacher: '',
-                    description: '',
+                    schoolYear: '2025-2026',
+                    homeroomTeacherId: '',
                     status: 'active'
                 });
             }
@@ -51,12 +47,21 @@ const ClassFormModal = ({ isOpen, onClose, classData, onSuccess }) => {
         }
     };
 
+    const currentSchoolYear = watch('schoolYear') || '2025-2026';
+    
+    const availableTeachers = teachers.filter(t => {
+        const assignedClass = allClasses?.find(c => c.homeroomTeacherId === t.id && c.academicYear === currentSchoolYear);
+        if (!assignedClass) return true;
+        if (classData && assignedClass.id === classData.id) return true;
+        return false;
+    });
+
     const onSubmit = async (data) => {
         try {
             setLoading(true);
             const payload = {
                 ...data,
-                homeroomTeacher: data.homeroomTeacher || null
+                homeroomTeacherId: data.homeroomTeacherId || null
             };
 
             if (classData) {
@@ -97,14 +102,6 @@ const ClassFormModal = ({ isOpen, onClose, classData, onSuccess }) => {
                 <form className="p-6" onSubmit={handleSubmit(onSubmit)}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Mã lớp *</label>
-                            <input 
-                                {...register('classCode', { required: true })} 
-                                disabled={!!classData}
-                                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100" 
-                            />
-                        </div>
-                        <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Tên lớp *</label>
                             <input 
                                 {...register('className', { required: true })} 
@@ -130,20 +127,12 @@ const ClassFormModal = ({ isOpen, onClose, classData, onSuccess }) => {
                         </div>
                         <div className="md:col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-2">Giáo viên chủ nhiệm</label>
-                            <select {...register('homeroomTeacher')} className="w-full px-4 py-2 rounded-lg border border-gray-200 outline-none">
+                            <select {...register('homeroomTeacherId')} className="w-full px-4 py-2 rounded-lg border border-gray-200 outline-none">
                                 <option value="">-- Chưa phân công --</option>
-                                {teachers.map(t => (
+                                {availableTeachers.map(t => (
                                     <option key={t.id} value={t.id}>{t.fullName} ({t.teacherCode})</option>
                                 ))}
                             </select>
-                        </div>
-                        <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Mô tả</label>
-                            <textarea 
-                                {...register('description')} 
-                                rows="3"
-                                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" 
-                            ></textarea>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Trạng thái</label>
@@ -231,8 +220,8 @@ const Classes = () => {
     };
 
     const filteredClasses = classes.filter(c => {
-        const matchSearch = c.className.toLowerCase().includes(searchTerm.toLowerCase()) || c.classCode.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchGrade = gradeFilter ? c.grade === gradeFilter : true;
+        const matchSearch = c.className.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchGrade = gradeFilter ? c.grade === parseInt(gradeFilter) : true;
         return matchSearch && matchGrade;
     });
 
@@ -282,7 +271,6 @@ const Classes = () => {
                         <table className="w-full text-left text-sm text-gray-600">
                             <thead className="bg-gray-50 text-gray-700 font-medium">
                                 <tr>
-                                    <th className="px-6 py-4 border-b border-gray-100">Mã Lớp</th>
                                     <th className="px-6 py-4 border-b border-gray-100">Tên Lớp</th>
                                     <th className="px-6 py-4 border-b border-gray-100">Khối</th>
                                     <th className="px-6 py-4 border-b border-gray-100">Sĩ số</th>
@@ -294,13 +282,12 @@ const Classes = () => {
                             <tbody>
                                 {filteredClasses.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                                        <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                                             Không có lớp học nào.
                                         </td>
                                     </tr>
                                 ) : filteredClasses.map((c) => (
                                     <tr key={c.id} className="hover:bg-blue-50/50 transition-colors border-b border-gray-50 last:border-0">
-                                        <td className="px-6 py-4 font-medium text-gray-800">{c.classCode}</td>
                                         <td className="px-6 py-4 font-bold text-blue-600">{c.className}</td>
                                         <td className="px-6 py-4">Khối {c.grade}</td>
                                         <td className="px-6 py-4 font-medium"><Users size={16} className="inline mr-1 text-gray-400" />{c.studentCount}</td>
@@ -337,6 +324,7 @@ const Classes = () => {
                     onClose={() => setIsModalOpen(false)} 
                     classData={selectedClass} 
                     onSuccess={fetchClasses} 
+                    allClasses={classes}
                 />
             </AnimatePresence>
         </div>

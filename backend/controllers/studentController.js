@@ -28,9 +28,31 @@ export const getStudents = async (req, res) => {
     }
 };
 
+export const getStudentById = async (req, res) => {
+    try {
+        const student = await prisma.student.findUnique({
+            where: { id: req.params.id },
+            include: {
+                user: { select: { email: true, status: true, username: true } },
+                class: { select: { className: true, grade: true, academicYear: true } },
+                grades: true
+            }
+        });
+        
+        if (!student) {
+            return res.status(404).json({ message: 'Không tìm thấy học sinh' });
+        }
+        
+        res.json(student);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Lỗi server khi lấy thông tin học sinh' });
+    }
+};
+
 export const createStudent = async (req, res) => {
     try {
-        const { studentCode, fullName, gender, classId, parentPhone } = req.body;
+        const { studentCode, fullName, gender, classId, phone, parentPhone } = req.body;
 
         const studentExists = await prisma.student.findUnique({ where: { studentCode } });
         if (studentExists) {
@@ -68,6 +90,7 @@ export const createStudent = async (req, res) => {
                     fullName,
                     gender: gender || 'Nam',
                     classId: classId || null,
+                    phone,
                     parentPhone
                 }
             });
@@ -82,21 +105,38 @@ export const createStudent = async (req, res) => {
 
 export const updateStudent = async (req, res) => {
     try {
-        const { fullName, gender, classId, parentPhone } = req.body;
+        const { fullName, gender, classId, phone, parentPhone, status } = req.body;
 
-        const student = await prisma.student.findUnique({ where: { id: req.params.id } });
+        const student = await prisma.student.findUnique({ 
+            where: { id: req.params.id },
+            include: { user: true }
+        });
         if (!student) {
             return res.status(404).json({ message: 'Không tìm thấy học sinh' });
         }
 
-        const updatedStudent = await prisma.student.update({
-            where: { id: req.params.id },
-            data: {
-                fullName: fullName || undefined,
-                gender: gender || undefined,
-                classId: classId !== undefined ? classId : undefined,
-                parentPhone: parentPhone || undefined
+        const updatedStudent = await prisma.$transaction(async (tx) => {
+            if (status && student.userId) {
+                await tx.user.update({
+                    where: { id: student.userId },
+                    data: { status }
+                });
             }
+
+            return await tx.student.update({
+                where: { id: req.params.id },
+                data: {
+                    fullName: fullName || undefined,
+                    gender: gender || undefined,
+                    classId: classId !== undefined ? (classId === '' ? null : classId) : undefined,
+                    phone: phone !== undefined ? phone : undefined,
+                    parentPhone: parentPhone || undefined
+                },
+                include: {
+                    user: { select: { email: true, status: true } },
+                    class: { select: { className: true } }
+                }
+            });
         });
 
         res.json(updatedStudent);

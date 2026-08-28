@@ -9,6 +9,8 @@ import subjectRoutes from './routes/subjectRoutes.js';
 import gradeRoutes from './routes/gradeRoutes.js';
 import scheduleRoutes from './routes/scheduleRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import feeProfileRoutes from './routes/feeProfileRoutes.js';
+import tuitionRoutes from './routes/tuitionRoutes.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
@@ -16,19 +18,45 @@ dotenv.config();
 
 const app = express();
 
-// Security Middleware
-app.use(helmet());
+// Security Middleware with cross-origin resource sharing friendly policy
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
 // Rate Limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 1000,
     message: 'Too many requests from this IP, please try again after 15 minutes',
 });
 app.use('/api', limiter);
 
-// Middleware
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }));
+// Allowed origins for CORS
+const allowedOrigins = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5174',
+    'http://127.0.0.1:5174',
+    process.env.FRONTEND_URL
+].filter(Boolean);
+
+// CORS Middleware
+app.use(cors({
+    origin: (origin, callback) => {
+        // Cho phép request không có origin (như mobile app, postman, curl) hoặc nằm trong danh sách được phép
+        if (!origin || allowedOrigins.includes(origin) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+            callback(null, true);
+        } else {
+            callback(null, true); // Dev mode fallback
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
 // Routes
@@ -40,6 +68,8 @@ app.use('/api/subjects', subjectRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/schedule', scheduleRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/fee-profiles', feeProfileRoutes);
+app.use('/api/tuition', tuitionRoutes);
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running with PostgreSQL (Prisma)' });
@@ -63,3 +93,4 @@ server.on('error', (err) => {
 
 // Keep process alive just in case
 setInterval(() => {}, 1000 * 60 * 60);
+

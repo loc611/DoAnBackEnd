@@ -89,3 +89,35 @@ export const updateClassGrades = async (req, res) => {
         res.status(500).json({ message: 'Lỗi server khi cập nhật điểm' });
     }
 };
+
+export const getMyGrades = async (req, res) => {
+    try {
+        const student = await prisma.student.findUnique({
+            where: { userId: req.user.id },
+            include: {
+                class: {
+                    include: {
+                        homeroomTeacher: true
+                    }
+                }
+            }
+        });
+
+        if (!student) {
+            return res.status(404).json({ message: 'Không tìm thấy hồ sơ học sinh' });
+        }
+
+        const grades = await prisma.grade.findMany({
+            where: { studentId: student.id },
+            include: {
+                class: true
+            },
+            orderBy: { semester: 'asc' }
+        });
+
+        res.json({ student, grades });
+    } catch (error) {
+        console.error('Error in getMyGrades:', error);
+        res.status(500).json({ message: 'Lỗi server khi lấy bảng điểm cá nhân' });
+    }
+};

@@ -1,11 +1,16 @@
 import express from 'express';
-import { getGradesByClass, updateClassGrades } from '../controllers/gradeController.js';
+import { getGradesByClass, updateClassGrades, getMyGrades } from '../controllers/gradeController.js';
 import { protect, authorize } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
+router.use(protect);
+
+router.get('/my-grades', getMyGrades);
+
 router.route('/class/:classId')
-    .get(protect, getGradesByClass)
-    .put(protect, authorize('admin', 'teacher'), updateClassGrades);
+    .get(getGradesByClass)
+    .put(authorize('admin', 'teacher'), updateClassGrades);
 
 export default router;
+

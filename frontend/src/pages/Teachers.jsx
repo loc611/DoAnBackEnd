@@ -1,22 +1,254 @@
-import { useState } from 'react';
-import { Search, Plus, Filter, Edit, Trash2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, Plus, Filter, Edit, Trash2, X, Lock, Unlock } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import api from '../services/api';
+import Swal from 'sweetalert2';
 
-const mockTeachers = [
-  { id: 'GV001', name: 'Nguyễn Văn Toán', subject: 'Toán học', phone: '0987654321', email: 'toan.nv@school.edu.vn', status: 'Đang dạy' },
-  { id: 'GV002', name: 'Trần Thị Lý', subject: 'Vật lý', phone: '0987654322', email: 'ly.tt@school.edu.vn', status: 'Đang dạy' },
-  { id: 'GV003', name: 'Lê Hoàng Hóa', subject: 'Hóa học', phone: '0987654323', email: 'hoa.lh@school.edu.vn', status: 'Nghỉ phép' },
-];
+const TeacherModal = ({ isOpen, onClose, teacher, onSubmit }) => {
+  const [formData, setFormData] = useState({
+    teacherCode: '',
+    fullName: '',
+    subject: 'Toán học',
+    phone: '',
+    email: '',
+    username: ''
+  });
+
+  useEffect(() => {
+    if (teacher) {
+      setFormData({
+        teacherCode: teacher.profile?.teacherCode || '',
+        fullName: teacher.profile?.fullName || '',
+        subject: teacher.profile?.specialization || 'Toán học',
+        phone: teacher.profile?.phone || '',
+        email: teacher.email || '',
+        username: teacher.username || ''
+      });
+    } else {
+      setFormData({
+        teacherCode: '',
+        fullName: '',
+        subject: 'Toán học',
+        phone: '',
+        email: '',
+        username: ''
+      });
+    }
+  }, [teacher, isOpen]);
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSubmit(formData);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden"
+      >
+        <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50/50">
+          <h2 className="text-xl font-bold text-gray-800">
+            {teacher ? 'Sửa thông tin Giáo viên' : 'Thêm Giáo viên mới'}
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100">
+            <X size={24} />
+          </button>
+        </div>
+        
+        <form className="p-6" onSubmit={handleSubmit}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Họ và tên *</label>
+              <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} required className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nhập họ tên..." />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Mã giáo viên *</label>
+              <input type="text" name="teacherCode" value={formData.teacherCode} onChange={handleChange} required disabled={!!teacher} className={`w-full px-4 py-2 rounded-lg border border-gray-200 ${teacher ? 'bg-gray-50 text-gray-500' : 'focus:ring-2 focus:ring-blue-500'} outline-none`} placeholder="VD: GV001" />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Môn giảng dạy *</label>
+              <select name="subject" value={formData.subject} onChange={handleChange} required className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
+                <option value="Toán học">Toán học</option>
+                <option value="Vật lý">Vật lý</option>
+                <option value="Hóa học">Hóa học</option>
+                <option value="Ngữ văn">Ngữ văn</option>
+                <option value="Sinh học">Sinh học</option>
+                <option value="Lịch sử">Lịch sử</option>
+                <option value="Địa lý">Địa lý</option>
+                <option value="Ngoại ngữ">Ngoại ngữ</option>
+                <option value="Tin học">Tin học</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Số điện thoại</label>
+              <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nhập số điện thoại..." />
+            </div>
+            
+            {!teacher && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Tên đăng nhập *</label>
+                  <input type="text" name="username" value={formData.username} onChange={handleChange} required className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Tên đăng nhập hệ thống" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                  <input type="email" name="email" value={formData.email} onChange={handleChange} required className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Email liên hệ" />
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="mt-8 flex justify-end space-x-3">
+            <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors font-medium">
+              Hủy bỏ
+            </button>
+            <button type="submit" className="btn-primary px-5 py-2.5">
+              Lưu thông tin
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
 
 const Teachers = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [teachers, setTeachers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedTeacher, setSelectedTeacher] = useState(null);
+
   const userRole = localStorage.getItem('userRole') || 'student';
+
+  useEffect(() => {
+    fetchTeachers();
+  }, []);
+
+  const fetchTeachers = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get('/users');
+      // Lọc ra các user có role = 'teacher'
+      const teacherUsers = res.data.filter(u => u.role === 'teacher');
+      setTeachers(teacherUsers);
+    } catch (err) {
+      console.error(err);
+      Swal.fire('Lỗi', 'Không thể tải dữ liệu giáo viên', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdd = () => {
+    setSelectedTeacher(null);
+    setIsModalOpen(true);
+  };
+
+  const handleEdit = (teacher) => {
+    setSelectedTeacher(teacher);
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = async (id) => {
+    const result = await Swal.fire({
+      title: 'Xóa giáo viên?',
+      text: 'Hành động này sẽ xóa hoàn toàn tài khoản và hồ sơ giáo viên!',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonText: 'Hủy',
+      confirmButtonText: 'Xóa ngay'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await api.delete(`/users/${id}`);
+        Swal.fire('Thành công', 'Đã xóa giáo viên', 'success');
+        fetchTeachers();
+      } catch (err) {
+        Swal.fire('Lỗi', err.response?.data?.message || 'Có lỗi khi xóa', 'error');
+      }
+    }
+  };
+
+  const handleModalSubmit = async (formData) => {
+    try {
+      if (selectedTeacher) {
+        // Cập nhật thông tin (chỉ gửi fullName, phone, subject)
+        const updateData = {
+          fullName: formData.fullName,
+          phone: formData.phone,
+          subject: formData.subject
+        };
+        await api.put(`/users/${selectedTeacher.id}`, updateData);
+        Swal.fire('Thành công', 'Cập nhật thành công', 'success');
+      } else {
+        // Thêm mới
+        const newData = {
+          ...formData,
+          role: 'teacher',
+          password: `${formData.teacherCode}@123` // Mật khẩu mặc định
+        };
+        await api.post('/users', newData);
+        Swal.fire('Thành công', 'Thêm giáo viên thành công', 'success');
+      }
+      setIsModalOpen(false);
+      fetchTeachers();
+    } catch (err) {
+      Swal.fire('Lỗi', err.response?.data?.message || 'Có lỗi xảy ra', 'error');
+    }
+  };
+
+  const handleToggleStatus = async (teacher) => {
+    const newStatus = teacher.status === 'active' ? 'inactive' : 'active';
+    const actionText = newStatus === 'active' ? 'Mở khóa' : 'Khóa';
+    
+    const result = await Swal.fire({
+      title: `${actionText} tài khoản?`,
+      text: `Bạn có chắc chắn muốn ${actionText.toLowerCase()} tài khoản của giáo viên này?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: newStatus === 'active' ? '#10b981' : '#f59e0b',
+      cancelButtonText: 'Hủy',
+      confirmButtonText: 'Đồng ý'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await api.patch(`/users/${teacher.id}/status`, { status: newStatus });
+        Swal.fire('Thành công', `Đã ${actionText.toLowerCase()} tài khoản`, 'success');
+        fetchTeachers();
+      } catch (err) {
+        Swal.fire('Lỗi', err.response?.data?.message || 'Có lỗi xảy ra', 'error');
+      }
+    }
+  };
+
+  const filteredTeachers = teachers.filter(t => 
+    t.profile?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    t.profile?.teacherCode?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Quản lý Giáo viên</h2>
         {userRole === 'admin' && (
-          <button className="btn-primary flex items-center">
+          <button onClick={handleAdd} className="btn-primary flex items-center">
             <Plus size={20} className="mr-2" />
             Thêm Giáo viên
           </button>
@@ -32,7 +264,7 @@ const Teachers = () => {
             </div>
             <input
               type="text"
-              placeholder="Tìm kiếm giáo viên..."
+              placeholder="Tìm kiếm theo mã GV, tên..."
               className="pl-10 pr-4 py-2.5 w-full border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-sm"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -46,59 +278,72 @@ const Teachers = () => {
 
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-gray-600">
-            <thead className="bg-gray-50 text-gray-700 font-medium">
-              <tr>
-                <th className="px-6 py-4 border-b border-gray-100">Mã GV</th>
-                <th className="px-6 py-4 border-b border-gray-100">Họ và tên</th>
-                <th className="px-6 py-4 border-b border-gray-100">Môn giảng dạy</th>
-                <th className="px-6 py-4 border-b border-gray-100">Số điện thoại</th>
-                <th className="px-6 py-4 border-b border-gray-100">Email</th>
-                <th className="px-6 py-4 border-b border-gray-100">Trạng thái</th>
-                <th className="px-6 py-4 border-b border-gray-100 text-right">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mockTeachers.map((teacher) => (
-                <tr key={teacher.id} className="hover:bg-blue-50/50 transition-colors border-b border-gray-50 last:border-0">
-                  <td className="px-6 py-4 font-medium text-blue-600">{teacher.id}</td>
-                  <td className="px-6 py-4 font-medium text-gray-800">{teacher.name}</td>
-                  <td className="px-6 py-4">
-                    <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-lg text-xs font-medium">
-                      {teacher.subject}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">{teacher.phone}</td>
-                  <td className="px-6 py-4">{teacher.email}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-lg text-xs font-medium ${
-                      teacher.status === 'Đang dạy' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      {teacher.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex justify-end space-x-2">
-                      {userRole === 'admin' ? (
-                        <>
-                          <button className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Sửa">
-                            <Edit size={18} />
-                          </button>
-                          <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Xóa">
-                            <Trash2 size={18} />
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-gray-400 text-xs italic">Chỉ xem</span>
-                      )}
-                    </div>
-                  </td>
+          {loading ? (
+             <div className="p-8 text-center text-gray-500">Đang tải dữ liệu...</div>
+          ) : (
+            <table className="w-full text-left text-sm text-gray-600">
+              <thead className="bg-gray-50 text-gray-700 font-medium">
+                <tr>
+                  <th className="px-6 py-4 border-b border-gray-100">Mã GV</th>
+                  <th className="px-6 py-4 border-b border-gray-100">Họ và tên</th>
+                  <th className="px-6 py-4 border-b border-gray-100">Môn giảng dạy</th>
+                  <th className="px-6 py-4 border-b border-gray-100">Số điện thoại</th>
+                  <th className="px-6 py-4 border-b border-gray-100">Email</th>
+                  <th className="px-6 py-4 border-b border-gray-100">Trạng thái</th>
+                  <th className="px-6 py-4 border-b border-gray-100 text-right">Thao tác</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredTeachers.length === 0 ? (
+                    <tr><td colSpan={7} className="text-center py-6 text-gray-500">Không tìm thấy giáo viên nào.</td></tr>
+                ) : filteredTeachers.map((teacher) => (
+                  <tr key={teacher.id} className="hover:bg-blue-50/50 transition-colors border-b border-gray-50 last:border-0">
+                    <td className="px-6 py-4 font-medium text-blue-600">{teacher.profile?.teacherCode}</td>
+                    <td className="px-6 py-4 font-medium text-gray-800">{teacher.profile?.fullName}</td>
+                    <td className="px-6 py-4">
+                      <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-lg text-xs font-medium">
+                        {teacher.profile?.specialization || 'Chưa phân công'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">{teacher.profile?.phone || '---'}</td>
+                    <td className="px-6 py-4">{teacher.email}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-lg text-xs font-medium ${
+                        teacher.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {teacher.status === 'active' ? 'Hoạt động' : 'Bị khóa'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex justify-end space-x-2">
+                        {userRole === 'admin' ? (
+                          <>
+                            <button onClick={() => handleToggleStatus(teacher)} className={`p-2 rounded-lg transition-colors ${teacher.status === 'active' ? 'text-amber-600 hover:bg-amber-100' : 'text-emerald-600 hover:bg-emerald-100'}`} title={teacher.status === 'active' ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}>
+                              {teacher.status === 'active' ? <Lock size={18} /> : <Unlock size={18} />}
+                            </button>
+                            <button onClick={() => handleEdit(teacher)} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Sửa">
+                              <Edit size={18} />
+                            </button>
+                            <button onClick={() => handleDelete(teacher.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Xóa">
+                              <Trash2 size={18} />
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-gray-400 text-xs italic">Chỉ xem</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
+      
+      <AnimatePresence>
+        <TeacherModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} teacher={selectedTeacher} onSubmit={handleModalSubmit} />
+      </AnimatePresence>
     </div>
   );
 };
