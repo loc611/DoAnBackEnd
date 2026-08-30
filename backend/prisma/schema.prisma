@@ -112,6 +112,8 @@ model Class {
   students      Student[]
   schedules     Schedule[]
   grades        Grade[]
+  attendances   Attendance[]
+  examSchedules ExamSchedule[]
   notifications Notification[]
 
   createdAt DateTime @default(now())
@@ -156,12 +158,55 @@ model Student {
   class       Class? @relation(fields: [classId], references: [id], onDelete: SetNull)
 
   grades      Grade[]
+  attendances Attendance[]
   feeBills    FeeBill[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@schema("student")
+}
+
+model Attendance {
+  id         String   @id @default(uuid())
+  studentId  String
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId    String
+  class      Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  date       DateTime
+  session    String   @default("morning") // 'morning', 'afternoon'
+  status     String   @default("present") // 'present', 'late', 'excused', 'unexcused'
+  note       String?
+  markedById String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([studentId, classId, date, session])
+  @@schema("student")
+}
+
+model ExamSchedule {
+  id           String    @id @default(uuid())
+  examName     String    // e.g. "Thi Giữa Học Kỳ 1"
+  examType     String    @default("Giữa kỳ") // 'Giữa kỳ', 'Cuối kỳ', 'Khảo sát'
+  subjectName  String
+  grade        Int       // 10, 11, 12 hoặc 0 (Tất cả)
+  classId      String?
+  class        Class?    @relation(fields: [classId], references: [id], onDelete: SetNull)
+  examDate     DateTime
+  startTime    String    // e.g. "07:30"
+  duration     Int       // minutes, e.g. 45, 60, 90
+  room         String    // e.g. "Phòng 101 - A1"
+  examFormat   String    @default("Trắc nghiệm") // 'Trắc nghiệm', 'Tự luận', 'Trắc nghiệm + Tự luận'
+  semester     String    @default("HK1_2026")
+  academicYear String    @default("2026-2027")
+  notes        String?
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@schema("admin")
 }
 
 model Grade {
@@ -223,4 +268,5 @@ model Notification {
 
   @@schema("student")
 }
+
 

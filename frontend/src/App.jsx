@@ -18,6 +18,10 @@ import HomeroomClass from './pages/HomeroomClass';
 import StudentGrades from './pages/StudentGrades';
 import StudentSchedule from './pages/StudentSchedule';
 import StudentTuition from './pages/StudentTuition';
+import Attendance from './pages/Attendance';
+import StudentAttendance from './pages/StudentAttendance';
+import ExamSchedule from './pages/ExamSchedule';
+import StudentExamSchedule from './pages/StudentExamSchedule';
 import Profile from './pages/Profile';
 import PrivateRoute from './components/PrivateRoute';
 
@@ -48,6 +52,8 @@ function App() {
             <Route path="subjects" element={<Subjects />} />
             <Route path="schedule" element={<Schedule />} />
             <Route path="grades" element={<Grades />} />
+            <Route path="attendance" element={<Attendance />} />
+            <Route path="exams" element={<ExamSchedule />} />
             <Route path="users" element={<UsersManagement />} />
             <Route path="tuition" element={<Tuition />} />
             <Route path="settings" element={<Settings />} />
@@ -58,6 +64,8 @@ function App() {
             {/* Student Specific Routes */}
             <Route path="student/grades" element={<StudentGrades />} />
             <Route path="student/schedule" element={<StudentSchedule />} />
+            <Route path="student/exams" element={<StudentExamSchedule />} />
+            <Route path="student/attendance" element={<StudentAttendance />} />
             <Route path="student/tuition" element={<StudentTuition />} />
           </Route>
         </Route>

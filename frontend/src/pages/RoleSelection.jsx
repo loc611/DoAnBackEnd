@@ -45,7 +45,7 @@ const RoleSelection = () => {
             animate={{ opacity: 1, y: 0 }}
             className="text-4xl font-bold text-gray-900 mb-4"
           >
-            Hệ thống Quản lý School Văn Lang
+            Hệ thống Quản lý School TTLN
           </motion.h1>
           <motion.p 
             initial={{ opacity: 0, y: -20 }}

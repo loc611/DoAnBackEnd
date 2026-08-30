@@ -8,6 +8,8 @@ import {
   BookOpenCheck,
   GraduationCap, 
   Calendar, 
+  CalendarDays,
+  UserCheck,
   Bell, 
   Menu,
   X,
@@ -68,6 +70,8 @@ const DashboardLayout = () => {
       { icon: LayoutList, label: 'Quản lý lớp học', path: '/classes' },
       { icon: BookOpen, label: 'Quản lý môn học', path: '/subjects' },
       { icon: Calendar, label: 'Thời khóa biểu', path: '/schedule' },
+      { icon: CalendarDays, label: 'Quản lý lịch thi', path: '/exams' },
+      { icon: UserCheck, label: 'Quản lý điểm danh', path: '/attendance' },
       { icon: BookOpenCheck, label: 'Quản lý điểm số', path: '/grades' },
       { icon: CreditCard, label: 'Quản lý học phí', path: '/tuition' },
       { icon: Shield, label: 'Quản trị tài khoản', path: '/users' },
@@ -78,8 +82,10 @@ const DashboardLayout = () => {
     teacher: [
       { icon: LayoutDashboard, label: 'Dashboard Giảng Dạy', path: '/' },
       { icon: School, label: 'Lớp Chủ Nhiệm', path: '/teacher/homeroom' },
+      { icon: UserCheck, label: 'Điểm Danh Học Sinh', path: '/attendance' },
       { icon: BookOpenCheck, label: 'Sổ Nhập Điểm', path: '/grades' },
       { icon: Calendar, label: 'Lịch Giảng Dạy', path: '/schedule' },
+      { icon: CalendarDays, label: 'Lịch Thi & Coi Thi', path: '/exams' },
       { icon: Users, label: 'Tra cứu Học sinh', path: '/students' },
       { icon: BellRing, label: 'Thông báo', path: '/notifications' },
       { icon: UserCircle, label: 'Hồ sơ & Mật khẩu', path: '/profile' },
@@ -88,6 +94,8 @@ const DashboardLayout = () => {
       { icon: LayoutDashboard, label: 'Trang Chủ Học Sinh', path: '/' },
       { icon: Award, label: 'Tra Cứu Bảng Điểm', path: '/student/grades' },
       { icon: Calendar, label: 'Thời Khóa Biểu', path: '/student/schedule' },
+      { icon: CalendarDays, label: 'Lịch Thi & Phòng Thi', path: '/student/exams' },
+      { icon: UserCheck, label: 'Chuyên Cần / Điểm Danh', path: '/student/attendance' },
       { icon: CreditCard, label: 'Học Phí & Hóa Đơn', path: '/student/tuition' },
       { icon: BellRing, label: 'Thông Báo Trường', path: '/notifications' },
       { icon: UserCircle, label: 'Hồ Sơ Cá Nhân', path: '/profile' },
@@ -107,11 +115,11 @@ const DashboardLayout = () => {
         <div className="flex items-center justify-between p-4 h-16 border-b border-slate-800/80">
           {expanded && (
             <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center font-black text-white text-sm shadow-md shadow-blue-500/30">
-                VL
+              <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center font-black text-white text-xs shadow-md shadow-blue-500/30">
+                TTLN
               </div>
               <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent truncate">
-                Văn Lang Edu
+                TTLN Edu
               </span>
             </div>
           )}
@@ -193,7 +201,7 @@ const DashboardLayout = () => {
               {getRoleLabel()} Portal
             </span>
             <span className="text-xs text-slate-400">•</span>
-            <p className="text-xs font-semibold text-slate-500">Hệ Thống Quản Lý Giáo Dục Trường THPT Văn Lang</p>
+            <p className="text-xs font-semibold text-slate-500">Hệ Thống Quản Lý Giáo Dục Trường THPT TTLN</p>
           </div>
 
           <div className="flex items-center space-x-3">

@@ -11,6 +11,8 @@ import scheduleRoutes from './routes/scheduleRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import feeProfileRoutes from './routes/feeProfileRoutes.js';
 import tuitionRoutes from './routes/tuitionRoutes.js';
+import attendanceRoutes from './routes/attendanceRoutes.js';
+import examRoutes from './routes/examRoutes.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
@@ -70,6 +72,8 @@ app.use('/api/schedule', scheduleRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/fee-profiles', feeProfileRoutes);
 app.use('/api/tuition', tuitionRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/exams', examRoutes);
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running with PostgreSQL (Prisma)' });

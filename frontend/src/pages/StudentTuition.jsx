@@ -188,7 +188,7 @@ const StudentTuition = () => {
                 <div className="p-4 bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl inline-block shadow-inner">
                   {/* VietQR dynamic generation */}
                   <img
-                    src={`https://api.vietqr.io/image/970422-0123456789-compact2.jpg?amount=${selectedBillForQR.feeProfile?.amount}&addInfo=${encodeURIComponent(`HOCPHI ${userData.studentCode || ''} ${selectedBillForQR.feeProfile?.name || ''}`)}&accountName=TRUONG%20VAN%20LANG`}
+                    src={`https://api.vietqr.io/image/970422-0123456789-compact2.jpg?amount=${selectedBillForQR.feeProfile?.amount}&addInfo=${encodeURIComponent(`HOCPHI ${userData.studentCode || ''} ${selectedBillForQR.feeProfile?.name || ''}`)}&accountName=TRUONG%20TTLN`}
                     alt="VietQR Payment Code"
                     className="w-56 h-56 mx-auto rounded-lg object-contain"
                   />
@@ -197,7 +197,7 @@ const StudentTuition = () => {
                 <div className="bg-blue-50 p-4 rounded-xl text-left text-xs space-y-1.5 border border-blue-100 text-gray-700">
                   <p><strong>Ngân hàng:</strong> MB Bank (Quân Đội)</p>
                   <p><strong>Số tài khoản:</strong> 0123456789</p>
-                  <p><strong>Chủ tài khoản:</strong> TRƯỜNG THPT VĂN LANG</p>
+                  <p><strong>Chủ tài khoản:</strong> TRƯỜNG THPT TTLN</p>
                   <p><strong>Số tiền:</strong> <span className="text-red-600 font-bold">{formatCurrency(selectedBillForQR.feeProfile?.amount)}</span></p>
                   <p><strong>Nội dung CK:</strong> <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 text-blue-700 font-bold">HOCPHI {userData.studentCode} {selectedBillForQR.id.slice(0, 6)}</code></p>
                 </div>
