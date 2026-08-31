@@ -1,22 +1,4 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: school_db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password123
-      POSTGRES_DB: school_management
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d school_management"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   backend:
     build:
       context: ./backend
@@ -27,12 +9,9 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=5000
-      - DATABASE_URL=postgresql://postgres:password123@postgres:5432/school_management?sslmode=disable
+      - DATABASE_URL=postgresql://neondb_owner:npg_IKecRfm4o6gZ@ep-aged-silence-azt04b35-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
       - JWT_SECRET=supersecretkey_for_dev_only
       - GOOGLE_SHEET_WEBHOOK_URL=https://script.google.com/macros/s/AKfycbxGfcWXmnD0-pKDZiC8NbOQn0v_9fsfIw18iaFgv0PpUE8Pt0myFUGVNhswWnxXmNQ49A/exec
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   frontend:
     build:
@@ -44,5 +23,3 @@ services:
     depends_on:
       - backend
 
-volumes:
-  postgres_data:

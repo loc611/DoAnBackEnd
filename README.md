@@ -15,7 +15,7 @@ docker compose up --build -d
 ### Các dịch vụ tự động khởi động:
 - **Frontend (Giao diện người dùng)**: [http://localhost](http://localhost) (Port `80`)
 - **Backend (API RESTful)**: [http://localhost:5000](http://localhost:5000) (Port `5000`)
-- **PostgreSQL Database**: Port `5432` (Tự động khởi tạo bảng qua Prisma và tự tạo tài khoản Admin mẫu)
+- **Database**: Kết nối trực tiếp cơ sở dữ liệu đám mây **Neon Cloud PostgreSQL** (dữ liệu được đồng bộ hóa tức thì trên cloud).
 
 ### Tài khoản đăng nhập mặc định:
 - **Tài khoản (Username / Email)**: `admin` (hoặc `admin@school.edu.vn`)
