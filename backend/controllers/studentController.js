@@ -1,5 +1,12 @@
 import prisma from '../prismaClient.js';
 import bcrypt from 'bcryptjs';
+import { 
+    isValidPhoneNumber, 
+    isValidStudentCode, 
+    isPhoneTakenInSystem, 
+    isStudentCodeTaken 
+} from '../utils/validator.js';
+import { autoAssignFeeProfilesForStudent } from '../utils/feeAutoAssign.js';
 
 export const getStudents = async (req, res) => {
     try {
@@ -34,8 +41,21 @@ export const getStudentById = async (req, res) => {
             where: { id: req.params.id },
             include: {
                 user: { select: { email: true, status: true, username: true } },
-                class: { select: { className: true, grade: true, academicYear: true } },
-                grades: true
+                class: { 
+                    select: { 
+                        id: true, 
+                        className: true, 
+                        grade: true, 
+                        academicYear: true,
+                        homeroomTeacher: { select: { fullName: true, phone: true } }
+                    } 
+                },
+                grades: true,
+                attendances: { orderBy: { date: 'desc' }, take: 10 },
+                feeBills: { 
+                    include: { feeProfile: true },
+                    orderBy: { createdAt: 'desc' }
+                }
             }
         });
         
@@ -50,13 +70,54 @@ export const getStudentById = async (req, res) => {
     }
 };
 
+const generateRandomStudentCode = () => `HS${Math.floor(100000 + Math.random() * 900000)}`;
+
 export const createStudent = async (req, res) => {
     try {
-        const { studentCode, fullName, gender, classId, phone, parentPhone } = req.body;
+        let { studentCode, fullName, gender, classId, phone, parentPhone } = req.body;
 
-        const studentExists = await prisma.student.findUnique({ where: { studentCode } });
-        if (studentExists) {
-            return res.status(400).json({ message: 'Mã học sinh đã tồn tại' });
+        // Chuẩn hóa và validate mã học sinh
+        if (studentCode && studentCode.trim()) {
+            studentCode = studentCode.trim().toUpperCase();
+            if (!isValidStudentCode(studentCode)) {
+                return res.status(400).json({ 
+                    message: 'Mã học sinh không đúng định dạng (phải bắt đầu bằng HS và theo sau là các chữ số, VD: HS123456)' 
+                });
+            }
+            const exists = await isStudentCodeTaken(prisma, studentCode);
+            if (exists) {
+                return res.status(400).json({ message: 'Mã học sinh đã tồn tại trong hệ thống' });
+            }
+        } else {
+            let isUnique = false;
+            while (!isUnique) {
+                const testCode = generateRandomStudentCode();
+                const exists = await prisma.student.findUnique({ where: { studentCode: testCode } });
+                if (!exists) {
+                    studentCode = testCode;
+                    isUnique = true;
+                }
+            }
+        }
+
+        // Validate SĐT cá nhân học sinh (bắt buộc đúng 10 số bắt đầu bằng 0 & duy nhất toàn hệ thống)
+        if (phone) {
+            phone = String(phone).trim();
+            if (!isValidPhoneNumber(phone)) {
+                return res.status(400).json({ message: 'Số điện thoại cá nhân phải gồm đúng 10 chữ số, bắt đầu bằng 0' });
+            }
+            const phoneExists = await isPhoneTakenInSystem(prisma, phone);
+            if (phoneExists) {
+                return res.status(400).json({ message: 'Số điện thoại cá nhân này đã được sử dụng trong hệ thống' });
+            }
+        }
+
+        // Validate SĐT phụ huynh (đúng 10 số bắt đầu bằng 0, cho phép trùng giữa các học sinh)
+        if (parentPhone) {
+            parentPhone = String(parentPhone).trim();
+            if (!isValidPhoneNumber(parentPhone)) {
+                return res.status(400).json({ message: 'SĐT phụ huynh phải gồm đúng 10 chữ số, bắt đầu bằng 0' });
+            }
         }
 
         const username = studentCode.toLowerCase();
@@ -87,25 +148,30 @@ export const createStudent = async (req, res) => {
                 data: {
                     userId: user.id,
                     studentCode,
-                    fullName,
+                    fullName: fullName ? fullName.trim() : '',
                     gender: gender || 'Nam',
                     classId: classId || null,
-                    phone,
-                    parentPhone
+                    phone: phone || null,
+                    parentPhone: parentPhone || null
                 }
             });
         });
 
+        // Tự động gán học phí của lớp cho học sinh mới
+        if (newStudent.classId) {
+            await autoAssignFeeProfilesForStudent(newStudent.id, newStudent.classId);
+        }
+
         res.status(201).json(newStudent);
     } catch (error) {
         console.error(error);
-        res.status(400).json({ message: 'Lỗi server khi tạo học sinh' });
+        res.status(400).json({ message: error.message || 'Lỗi server khi tạo học sinh' });
     }
 };
 
 export const updateStudent = async (req, res) => {
     try {
-        const { fullName, gender, classId, phone, parentPhone, status } = req.body;
+        let { studentCode, fullName, gender, classId, phone, parentPhone, status } = req.body;
 
         const student = await prisma.student.findUnique({ 
             where: { id: req.params.id },
@@ -113,6 +179,43 @@ export const updateStudent = async (req, res) => {
         });
         if (!student) {
             return res.status(404).json({ message: 'Không tìm thấy học sinh' });
+        }
+
+        // Validate mã học sinh nếu có thay đổi
+        if (studentCode !== undefined && studentCode.trim()) {
+            studentCode = studentCode.trim().toUpperCase();
+            if (!isValidStudentCode(studentCode)) {
+                return res.status(400).json({ 
+                    message: 'Mã học sinh không đúng định dạng (phải bắt đầu bằng HS và theo sau là các chữ số, VD: HS123456)' 
+                });
+            }
+            const codeTaken = await isStudentCodeTaken(prisma, studentCode, req.params.id);
+            if (codeTaken) {
+                return res.status(400).json({ message: 'Mã học sinh đã tồn tại ở học sinh khác' });
+            }
+        }
+
+        // Validate số điện thoại cá nhân (định dạng + duy nhất toàn hệ thống)
+        if (phone !== undefined && phone !== null && phone !== '') {
+            phone = String(phone).trim();
+            if (!isValidPhoneNumber(phone)) {
+                return res.status(400).json({ message: 'Số điện thoại cá nhân phải gồm đúng 10 chữ số, bắt đầu bằng 0' });
+            }
+            const phoneTaken = await isPhoneTakenInSystem(prisma, phone, {
+                excludeStudentId: req.params.id,
+                excludeUserId: student.userId
+            });
+            if (phoneTaken) {
+                return res.status(400).json({ message: 'Số điện thoại cá nhân này đã được sử dụng trong hệ thống' });
+            }
+        }
+
+        // Validate SĐT phụ huynh nếu có
+        if (parentPhone !== undefined && parentPhone !== null && parentPhone !== '') {
+            parentPhone = String(parentPhone).trim();
+            if (!isValidPhoneNumber(parentPhone)) {
+                return res.status(400).json({ message: 'SĐT phụ huynh phải gồm đúng 10 chữ số, bắt đầu bằng 0' });
+            }
         }
 
         const updatedStudent = await prisma.$transaction(async (tx) => {
@@ -126,11 +229,12 @@ export const updateStudent = async (req, res) => {
             return await tx.student.update({
                 where: { id: req.params.id },
                 data: {
-                    fullName: fullName || undefined,
+                    studentCode: studentCode || undefined,
+                    fullName: fullName !== undefined ? fullName.trim() : undefined,
                     gender: gender || undefined,
                     classId: classId !== undefined ? (classId === '' ? null : classId) : undefined,
-                    phone: phone !== undefined ? phone : undefined,
-                    parentPhone: parentPhone || undefined
+                    phone: phone !== undefined ? (phone === '' ? null : phone) : undefined,
+                    parentPhone: parentPhone !== undefined ? (parentPhone === '' ? null : parentPhone) : undefined
                 },
                 include: {
                     user: { select: { email: true, status: true } },
@@ -139,10 +243,15 @@ export const updateStudent = async (req, res) => {
             });
         });
 
+        // Nếu học sinh được xếp/chuyển vào lớp mới, tự động gán các khoản học phí của lớp đó
+        if (updatedStudent.classId && updatedStudent.classId !== student.classId) {
+            await autoAssignFeeProfilesForStudent(updatedStudent.id, updatedStudent.classId);
+        }
+
         res.json(updatedStudent);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Lỗi server khi cập nhật' });
+        res.status(500).json({ message: error.message || 'Lỗi server khi cập nhật' });
     }
 };
 

@@ -1,4 +1,5 @@
 import prisma from '../prismaClient.js';
+import { isValidSubjectCode } from '../utils/validator.js';
 
 export const getSubjects = async (req, res) => {
     try {
@@ -26,18 +27,37 @@ export const getSubjects = async (req, res) => {
 
 export const createSubject = async (req, res) => {
     try {
-        const { subjectCode, name, credits, type, teacherId } = req.body;
+        let { subjectCode, name, grade, periodsPerWeek, credits, type, teacherId } = req.body;
+
+        if (!subjectCode || !subjectCode.trim()) {
+            return res.status(400).json({ message: 'Mã môn học không được để trống' });
+        }
+
+        subjectCode = subjectCode.trim().toUpperCase();
+
+        if (!isValidSubjectCode(subjectCode)) {
+            return res.status(400).json({ 
+                message: 'Mã môn học không hợp lệ (chỉ gồm 2-20 ký tự chữ và số, không khoảng trắng, ví dụ: TOAN10, MH01)' 
+            });
+        }
         
-        const existing = await prisma.subject.findUnique({ where: { subjectCode } });
+        const existing = await prisma.subject.findFirst({ 
+            where: { subjectCode: { equals: subjectCode, mode: 'insensitive' } } 
+        });
         if (existing) {
             return res.status(400).json({ message: 'Mã môn học đã tồn tại' });
         }
 
+        const parsedPeriods = parseInt(periodsPerWeek || credits, 10) || 2;
+        const parsedGrade = parseInt(grade, 10) || 0; // 0: Toàn trường, 10: Khối 10, 11: Khối 11, 12: Khối 12
+
         const createdSubject = await prisma.subject.create({
             data: {
                 subjectCode,
-                name,
-                credits: parseInt(credits) || 0,
+                name: name ? name.trim() : '',
+                grade: parsedGrade,
+                periodsPerWeek: parsedPeriods,
+                credits: parsedPeriods,
                 type: type || 'Bắt buộc',
                 teacherId: teacherId || null
             }
@@ -45,7 +65,7 @@ export const createSubject = async (req, res) => {
         res.status(201).json(createdSubject);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Lỗi server khi tạo môn học' });
+        res.status(400).json({ message: error.message || 'Lỗi server khi tạo môn học' });
     }
 };
 

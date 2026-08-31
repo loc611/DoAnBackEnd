@@ -208,7 +208,7 @@ const StudentGrades = () => {
                     <span className="text-2xl">{s.icon}</span>
                     <div>
                       <h4 className="font-semibold text-gray-800 text-sm">{s.name}</h4>
-                      <p className="text-xs text-gray-400">{s.credits} tín chỉ / tiết tuần</p>
+                      <p className="text-xs text-gray-400">{s.credits} tiết / tuần</p>
                     </div>
                   </div>
 

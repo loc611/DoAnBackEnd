@@ -13,8 +13,10 @@ import feeProfileRoutes from './routes/feeProfileRoutes.js';
 import tuitionRoutes from './routes/tuitionRoutes.js';
 import attendanceRoutes from './routes/attendanceRoutes.js';
 import examRoutes from './routes/examRoutes.js';
+import systemSettingRoutes from './routes/systemSettingRoutes.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import { initDefaultUsers } from './utils/initDefaultUsers.js';
 
 dotenv.config();
 
@@ -74,6 +76,7 @@ app.use('/api/fee-profiles', feeProfileRoutes);
 app.use('/api/tuition', tuitionRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/exams', examRoutes);
+app.use('/api/settings', systemSettingRoutes);
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running with PostgreSQL (Prisma)' });
@@ -87,8 +90,9 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
+    await initDefaultUsers();
 });
 
 server.on('error', (err) => {

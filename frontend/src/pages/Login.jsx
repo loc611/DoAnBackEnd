@@ -260,9 +260,9 @@ const Login = () => {
                     <Mail size={22} />
                   </div>
                   <input
-                    type="email"
+                    type="text"
                     className="block w-full pl-13 sm:pl-14 pr-4 py-4 sm:py-4.5 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-600/15 focus:border-blue-600 outline-none transition-all text-base bg-slate-50/70 hover:bg-white focus:bg-white text-slate-800 placeholder-slate-400 font-medium"
-                    placeholder="Nhập email của bạn"
+                    placeholder="Nhập email hoặc tên tài khoản (admin, gv001, hs001...)"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required

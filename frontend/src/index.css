@@ -1,28 +1,70 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
+  --font-sans: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: "Plus Jakarta Sans", sans-serif;
   --color-primary: #2563EB;
   --color-secondary: #3B82F6;
   --color-success: #10B981;
   --color-warning: #F59E0B;
   --color-danger: #EF4444;
-  --color-background: #F8FAFC;
-  --color-text: #1F2937;
-  --font-poppins: "Poppins", sans-serif;
 }
 
 @layer base {
   body {
-    @apply font-poppins text-text bg-background;
+    font-family: var(--font-sans);
+    letter-spacing: -0.01em;
   }
 }
 
-@layer components {
+@layer utilities {
   .glass-card {
-    @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-lg rounded-2xl;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(226, 232, 240, 0.8);
   }
-  
-  .btn-primary {
-    @apply bg-primary text-white hover:bg-secondary transition-colors duration-300 rounded-lg px-4 py-2 shadow-md hover:shadow-lg font-medium;
+  .dark .glass-card {
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(51, 65, 85, 0.6);
   }
+
+  .glow-primary {
+    box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.25);
+  }
+  .glow-indigo {
+    box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.25);
+  }
+  .glow-emerald {
+    box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.25);
+  }
+  .glow-amber {
+    box-shadow: 0 10px 25px -5px rgba(245, 158, 11, 0.25);
+  }
+}
+
+/* Custom modern scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }

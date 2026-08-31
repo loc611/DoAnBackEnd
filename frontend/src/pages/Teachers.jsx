@@ -3,8 +3,14 @@ import { Search, Plus, Filter, Edit, Trash2, X, Lock, Unlock } from 'lucide-reac
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../services/api';
 import Swal from 'sweetalert2';
+import { generateTeacherCode } from '../utils/codeGenerator';
+import { isValidPhoneNumber, sanitizePhoneNumber, PHONE_ERROR_MESSAGES } from '../utils/phoneValidation';
 
-const TeacherModal = ({ isOpen, onClose, teacher, onSubmit }) => {
+const DEFAULT_SUBJECTS = [
+  'Toán học', 'Vật lý', 'Hóa học', 'Ngữ văn', 'Sinh học', 'Lịch sử', 'Địa lý', 'Tiếng Anh', 'Tin học', 'Giáo dục công dân', 'Thể dục', 'Giáo dục quốc phòng', 'Công nghệ'
+];
+
+const TeacherModal = ({ isOpen, onClose, teacher, subjectsList = [], onSubmit }) => {
   const [formData, setFormData] = useState({
     teacherCode: '',
     fullName: '',
@@ -13,35 +19,62 @@ const TeacherModal = ({ isOpen, onClose, teacher, onSubmit }) => {
     email: '',
     username: ''
   });
+  const [errors, setErrors] = useState({});
 
   useEffect(() => {
     if (teacher) {
       setFormData({
         teacherCode: teacher.profile?.teacherCode || '',
         fullName: teacher.profile?.fullName || '',
-        subject: teacher.profile?.specialization || 'Toán học',
+        subject: teacher.profile?.specialization || (subjectsList[0]?.name || 'Toán học'),
         phone: teacher.profile?.phone || '',
         email: teacher.email || '',
         username: teacher.username || ''
       });
     } else {
       setFormData({
-        teacherCode: '',
+        teacherCode: generateTeacherCode(),
         fullName: '',
-        subject: 'Toán học',
+        subject: subjectsList[0]?.name || 'Toán học',
         phone: '',
         email: '',
         username: ''
       });
     }
-  }, [teacher, isOpen]);
+    setErrors({});
+  }, [teacher, isOpen, subjectsList]);
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    let { name, value } = e.target;
+    if (name === 'phone') {
+      value = sanitizePhoneNumber(value);
+      const newErrors = { ...errors };
+      if (!value) {
+        newErrors.phone = PHONE_ERROR_MESSAGES.REQUIRED;
+      } else if (!isValidPhoneNumber(value)) {
+        newErrors.phone = PHONE_ERROR_MESSAGES.INVALID;
+      } else {
+        delete newErrors.phone;
+      }
+      setErrors(newErrors);
+    }
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const newErrors = {};
+    if (!formData.phone) {
+      newErrors.phone = PHONE_ERROR_MESSAGES.REQUIRED;
+    } else if (!isValidPhoneNumber(formData.phone)) {
+      newErrors.phone = PHONE_ERROR_MESSAGES.INVALID;
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
     onSubmit(formData);
   };
 
@@ -72,28 +105,45 @@ const TeacherModal = ({ isOpen, onClose, teacher, onSubmit }) => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Mã giáo viên *</label>
-              <input type="text" name="teacherCode" value={formData.teacherCode} onChange={handleChange} required disabled={!!teacher} className={`w-full px-4 py-2 rounded-lg border border-gray-200 ${teacher ? 'bg-gray-50 text-gray-500' : 'focus:ring-2 focus:ring-blue-500'} outline-none`} placeholder="VD: GV001" />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Mã giáo viên (Tự động) *</label>
+              <input type="text" name="teacherCode" value={formData.teacherCode} readOnly required className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-100 font-mono font-semibold text-blue-600 outline-none cursor-not-allowed" />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Môn giảng dạy *</label>
               <select name="subject" value={formData.subject} onChange={handleChange} required className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
-                <option value="Toán học">Toán học</option>
-                <option value="Vật lý">Vật lý</option>
-                <option value="Hóa học">Hóa học</option>
-                <option value="Ngữ văn">Ngữ văn</option>
-                <option value="Sinh học">Sinh học</option>
-                <option value="Lịch sử">Lịch sử</option>
-                <option value="Địa lý">Địa lý</option>
-                <option value="Ngoại ngữ">Ngoại ngữ</option>
-                <option value="Tin học">Tin học</option>
+                {subjectsList && subjectsList.length > 0 ? (
+                  subjectsList.map(s => (
+                    <option key={s.id || s.subjectCode || s.name} value={s.name}>
+                      {s.name} {s.subjectCode ? `(${s.subjectCode})` : ''}
+                    </option>
+                  ))
+                ) : (
+                  DEFAULT_SUBJECTS.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))
+                )}
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Số điện thoại</label>
-              <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nhập số điện thoại..." />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Số điện thoại *</label>
+              <input 
+                type="tel" 
+                name="phone" 
+                value={formData.phone} 
+                onChange={handleChange} 
+                placeholder="VD: 0912345678" 
+                maxLength={10}
+                className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors ${
+                  errors.phone ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
+                }`} 
+              />
+              {errors.phone && (
+                <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
+                  <span>⚠️</span> {errors.phone}
+                </p>
+              )}
             </div>
             
             {!teacher && (
@@ -128,6 +178,7 @@ const TeacherModal = ({ isOpen, onClose, teacher, onSubmit }) => {
 const Teachers = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [teachers, setTeachers] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState(null);
@@ -141,10 +192,14 @@ const Teachers = () => {
   const fetchTeachers = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/users');
+      const [resUsers, resSubjects] = await Promise.all([
+        api.get('/users'),
+        api.get('/subjects').catch(() => ({ data: [] }))
+      ]);
       // Lọc ra các user có role = 'teacher'
-      const teacherUsers = res.data.filter(u => u.role === 'teacher');
+      const teacherUsers = (resUsers.data || []).filter(u => u.role === 'teacher');
       setTeachers(teacherUsers);
+      setSubjects(resSubjects.data || []);
     } catch (err) {
       console.error(err);
       Swal.fire('Lỗi', 'Không thể tải dữ liệu giáo viên', 'error');
@@ -342,7 +397,13 @@ const Teachers = () => {
       </div>
       
       <AnimatePresence>
-        <TeacherModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} teacher={selectedTeacher} onSubmit={handleModalSubmit} />
+        <TeacherModal 
+          isOpen={isModalOpen} 
+          onClose={() => setIsModalOpen(false)} 
+          teacher={selectedTeacher} 
+          subjectsList={subjects} 
+          onSubmit={handleModalSubmit} 
+        />
       </AnimatePresence>
     </div>
   );

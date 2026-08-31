@@ -8,6 +8,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import Swal from 'sweetalert2';
+import { generateStudentCode } from '../utils/codeGenerator';
+import { isValidPhoneNumber, sanitizePhoneNumber, PHONE_ERROR_MESSAGES } from '../utils/phoneValidation';
 
 // Modal Thêm / Sửa học sinh thủ công
 const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
@@ -20,6 +22,7 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
     parentPhone: '',
     status: 'active'
   });
+  const [errors, setErrors] = useState({});
 
   useEffect(() => {
     if (student) {
@@ -35,7 +38,7 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
     } else {
       setFormData({
         fullName: '',
-        studentCode: '',
+        studentCode: generateStudentCode(),
         gender: 'Nam',
         classId: '',
         phone: '',
@@ -43,14 +46,46 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
         status: 'active'
       });
     }
+    setErrors({});
   }, [student, isOpen]);
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    let { name, value } = e.target;
+    if (name === 'phone' || name === 'parentPhone') {
+      value = sanitizePhoneNumber(value);
+      const newErrors = { ...errors };
+      if (!value) {
+        newErrors[name] = name === 'phone' ? PHONE_ERROR_MESSAGES.REQUIRED : PHONE_ERROR_MESSAGES.PARENT_REQUIRED;
+      } else if (!isValidPhoneNumber(value)) {
+        newErrors[name] = name === 'phone' ? PHONE_ERROR_MESSAGES.INVALID : PHONE_ERROR_MESSAGES.PARENT_INVALID;
+      } else {
+        delete newErrors[name];
+      }
+      setErrors(newErrors);
+    }
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const newErrors = {};
+    if (!formData.phone) {
+      newErrors.phone = PHONE_ERROR_MESSAGES.REQUIRED;
+    } else if (!isValidPhoneNumber(formData.phone)) {
+      newErrors.phone = PHONE_ERROR_MESSAGES.INVALID;
+    }
+
+    if (!formData.parentPhone) {
+      newErrors.parentPhone = PHONE_ERROR_MESSAGES.PARENT_REQUIRED;
+    } else if (!isValidPhoneNumber(formData.parentPhone)) {
+      newErrors.parentPhone = PHONE_ERROR_MESSAGES.PARENT_INVALID;
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
     onSubmit(formData);
   };
 
@@ -81,8 +116,8 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Mã học sinh *</label>
-              <input type="text" name="studentCode" value={formData.studentCode} onChange={handleChange} required disabled={!!student} className={`w-full px-4 py-2 rounded-lg border border-gray-200 ${student ? 'bg-gray-50 text-gray-500' : 'focus:ring-2 focus:ring-blue-500'} outline-none`} placeholder="VD: HS001" />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Mã học sinh (Tự động) *</label>
+              <input type="text" name="studentCode" value={formData.studentCode} readOnly required className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-100 font-mono font-semibold text-blue-600 outline-none cursor-not-allowed" />
             </div>
 
             <div>
@@ -105,13 +140,43 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Số điện thoại HS</label>
-              <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nhập số điện thoại..." />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Số điện thoại HS *</label>
+              <input 
+                type="tel" 
+                name="phone" 
+                value={formData.phone} 
+                onChange={handleChange} 
+                placeholder="VD: 0912345678" 
+                maxLength={10}
+                className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors ${
+                  errors.phone ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
+                }`}
+              />
+              {errors.phone && (
+                <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
+                  <span>⚠️</span> {errors.phone}
+                </p>
+              )}
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Số ĐT Phụ huynh</label>
-              <input type="text" name="parentPhone" value={formData.parentPhone} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="SĐT phụ huynh..." />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Số ĐT Phụ huynh *</label>
+              <input 
+                type="tel" 
+                name="parentPhone" 
+                value={formData.parentPhone} 
+                onChange={handleChange} 
+                placeholder="VD: 0987654321" 
+                maxLength={10}
+                className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors ${
+                  errors.parentPhone ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
+                }`}
+              />
+              {errors.parentPhone && (
+                <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
+                  <span>⚠️</span> {errors.parentPhone}
+                </p>
+              )}
             </div>
 
             {student && (

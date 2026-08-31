@@ -1,8 +1,7 @@
 import axios from 'axios';
 
-// Lấy base URL từ biến môi trường (nếu có), hoặc mặc định là cổng 5000
-// Lưu ý: Nếu backend của bạn đang chạy ở cổng 5174, hãy sửa lại đường dẫn này
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Base URL: Sử dụng biến môi trường nếu có, hoặc tự động phát hiện proxy / dev server
+const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' && window.location.port === '5173' ? 'http://localhost:5000/api' : '/api');
 
 const api = axios.create({
   baseURL: API_URL,
@@ -27,14 +26,18 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Nếu lỗi 401 Unauthorized, tự động xoá token và chuyển về trang đăng nhập
-      localStorage.removeItem('token');
-      localStorage.removeItem('userRole');
-      localStorage.removeItem('userData');
-      window.location.href = '/';
+      const isLoginRequest = error.config?.url?.includes('/auth/login');
+      // Không can thiệp nếu đang thực hiện đăng nhập hoặc đang ở màn hình login
+      if (!isLoginRequest && window.location.pathname !== '/login') {
+        localStorage.removeItem('token');
+        localStorage.removeItem('userRole');
+        localStorage.removeItem('userData');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
 );
 
 export default api;
+

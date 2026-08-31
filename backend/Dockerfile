@@ -1,16 +1,17 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Copy package files and install dependencies
+# Copy package files và cài đặt dependencies
 COPY package*.json ./
-RUN npm install --production
+RUN npm install
 
-# Copy the rest of the application code
+# Copy toàn bộ mã nguồn (bao gồm cả thư mục prisma chứa schema.prisma)
 COPY . .
 
-# Expose the port the app runs on
+# Tạo Prisma Client
+RUN npx prisma generate
+
 EXPOSE 5000
 
-# Start the application
 CMD ["npm", "start"]

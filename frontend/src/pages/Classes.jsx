@@ -7,17 +7,21 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 
 const ClassFormModal = ({ isOpen, onClose, classData, onSuccess, allClasses }) => {
-    const { register, handleSubmit, reset, watch } = useForm();
+    const { register, handleSubmit, reset, watch, setValue } = useForm();
     const [loading, setLoading] = useState(false);
     const [teachers, setTeachers] = useState([]);
+
+    const classNameValue = watch('className') || '';
 
     useEffect(() => {
         if (isOpen) {
             fetchTeachers();
             if (classData) {
+                const match = classData.className?.trim().match(/^(10|11|12)/);
+                const derivedGrade = match ? match[1] : (classData.grade ? String(classData.grade) : '10');
                 reset({
-                    className: classData.className,
-                    grade: classData.grade,
+                    className: classData.className || '',
+                    grade: derivedGrade,
                     schoolYear: classData.academicYear || '2025-2026',
                     homeroomTeacherId: classData.homeroomTeacher?.id || '',
                     status: classData.status || 'active'
@@ -34,11 +38,20 @@ const ClassFormModal = ({ isOpen, onClose, classData, onSuccess, allClasses }) =
         }
     }, [classData, isOpen, reset]);
 
+    // Automatically synchronize grade when user types className
+    useEffect(() => {
+        if (classNameValue) {
+            const match = classNameValue.trim().match(/^(10|11|12)/);
+            if (match) {
+                setValue('grade', match[1]);
+            } else {
+                setValue('grade', '');
+            }
+        }
+    }, [classNameValue, setValue]);
+
     const fetchTeachers = async () => {
         try {
-            // Wait, we need to fetch all teachers.
-            // The /api/users endpoint returns all users and their profiles.
-            // We can filter by role = teacher.
             const res = await api.get('/users');
             const teacherList = res.data.filter(u => u.role === 'teacher').map(u => u.profile);
             setTeachers(teacherList.filter(t => t != null));
@@ -58,9 +71,17 @@ const ClassFormModal = ({ isOpen, onClose, classData, onSuccess, allClasses }) =
 
     const onSubmit = async (data) => {
         try {
+            const trimmedClassName = data.className?.trim() || '';
+            const match = trimmedClassName.match(/^(10|11|12)/);
+            if (!match) {
+                return Swal.fire('Tên lớp không hợp lệ', 'Tên lớp phải bắt đầu bằng khối 10, 11 hoặc 12 (VD: 10A1, 11B2, 12 Tin)', 'warning');
+            }
+
             setLoading(true);
             const payload = {
                 ...data,
+                className: trimmedClassName,
+                grade: parseInt(match[1], 10),
                 homeroomTeacherId: data.homeroomTeacherId || null
             };
 
@@ -102,15 +123,25 @@ const ClassFormModal = ({ isOpen, onClose, classData, onSuccess, allClasses }) =
                 <form className="p-6" onSubmit={handleSubmit(onSubmit)}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Tên lớp *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Tên lớp * <span className="text-xs text-gray-400 font-normal">(VD: 10A1, 11B2, 12 Tin)</span>
+                            </label>
                             <input 
                                 {...register('className', { required: true })} 
+                                placeholder="Nhập tên lớp..."
                                 className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" 
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Khối</label>
-                            <select {...register('grade')} className="w-full px-4 py-2 rounded-lg border border-gray-200 outline-none" disabled={!!classData}>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Khối <span className="text-xs text-blue-500 font-normal">(Tự động theo tên lớp)</span>
+                            </label>
+                            <select 
+                                {...register('grade')} 
+                                className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-100 text-gray-700 outline-none cursor-not-allowed font-medium" 
+                                disabled
+                            >
+                                <option value="">-- Chưa xác định --</option>
                                 <option value="10">Khối 10</option>
                                 <option value="11">Khối 11</option>
                                 <option value="12">Khối 12</option>
@@ -121,7 +152,7 @@ const ClassFormModal = ({ isOpen, onClose, classData, onSuccess, allClasses }) =
                             <input 
                                 {...register('schoolYear', { required: true })} 
                                 disabled={!!classData}
-                                placeholder="VD: 2023-2024"
+                                placeholder="VD: 2025-2026"
                                 className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100" 
                             />
                         </div>

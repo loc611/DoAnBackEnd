@@ -4,9 +4,13 @@ import Swal from 'sweetalert2';
 import api from '../services/api';
 import { Search, Plus, Filter, Edit, Lock, Unlock, KeyRound, Trash2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { generateStudentCode, generateTeacherCode } from '../utils/codeGenerator';
+import { PHONE_10_DIGITS_REGEX, PHONE_ERROR_MESSAGES, sanitizePhoneNumber } from '../utils/phoneValidation';
 
-const UserFormModal = ({ isOpen, onClose, user, onSuccess }) => {
-    const { register, handleSubmit, watch, reset, setValue, formState: { errors } } = useForm();
+const UserFormModal = ({ isOpen, onClose, user, classesList = [], onSuccess }) => {
+    const { register, handleSubmit, watch, reset, setValue, formState: { errors } } = useForm({
+        mode: 'onChange'
+    });
     const [loading, setLoading] = useState(false);
     
     const role = watch('role');
@@ -38,16 +42,26 @@ const UserFormModal = ({ isOpen, onClose, user, onSuccess }) => {
                 role: 'student',
                 fullName: '',
                 phone: '',
-                teacherCode: '',
+                teacherCode: generateTeacherCode(),
                 subject: '',
                 department: '',
                 gender: 'Nam',
-                studentCode: '',
+                studentCode: generateStudentCode(),
                 classId: '',
                 parentPhone: ''
             });
         }
     }, [user, isOpen, reset]);
+
+    useEffect(() => {
+        if (!user && isOpen) {
+            if (role === 'student' && !watch('studentCode')) {
+                setValue('studentCode', generateStudentCode());
+            } else if (role === 'teacher' && !watch('teacherCode')) {
+                setValue('teacherCode', generateTeacherCode());
+            }
+        }
+    }, [role, user, isOpen, setValue, watch]);
 
     const onSubmit = async (data) => {
         if (!user && data.password !== data.confirmPassword) {
@@ -100,19 +114,44 @@ const UserFormModal = ({ isOpen, onClose, user, onSuccess }) => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Username *</label>
                             <input 
-                                {...register('username', { required: true })} 
+                                {...register('username', { 
+                                    required: 'Tên đăng nhập là bắt buộc',
+                                    minLength: { value: 3, message: 'Tên đăng nhập phải có ít nhất 3 ký tự' }
+                                })} 
                                 disabled={!!user}
-                                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100" 
+                                placeholder="VD: nguyenvana"
+                                className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors disabled:bg-gray-100 ${
+                                    errors.username ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
+                                }`} 
                             />
+                            {errors.username && (
+                                <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
+                                    <span>⚠️</span> {errors.username.message}
+                                </p>
+                            )}
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
                             <input 
                                 type="email"
-                                {...register('email', { required: true })} 
+                                {...register('email', { 
+                                    required: 'Email là bắt buộc',
+                                    pattern: {
+                                        value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                                        message: 'Email không đúng định dạng'
+                                    }
+                                })} 
                                 disabled={!!user}
-                                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100" 
+                                placeholder="VD: user@school.edu.vn"
+                                className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors disabled:bg-gray-100 ${
+                                    errors.email ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
+                                }`} 
                             />
+                            {errors.email && (
+                                <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
+                                    <span>⚠️</span> {errors.email.message}
+                                </p>
+                            )}
                         </div>
 
                         {!user && (
@@ -121,17 +160,47 @@ const UserFormModal = ({ isOpen, onClose, user, onSuccess }) => {
                                     <label className="block text-sm font-medium text-gray-700 mb-2">Mật khẩu *</label>
                                     <input 
                                         type="password"
-                                        {...register('password', { required: !user, minLength: 6 })} 
-                                        className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                        {...register('password', { 
+                                            required: !user ? 'Mật khẩu là bắt buộc' : false, 
+                                            minLength: {
+                                                value: 6,
+                                                message: 'Mật khẩu phải có ít nhất 6 ký tự'
+                                            }
+                                        })} 
+                                        placeholder="Tối thiểu 6 ký tự"
+                                        className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors ${
+                                            errors.password ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
+                                        }`} 
                                     />
+                                    {errors.password && (
+                                        <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
+                                            <span>⚠️</span> {errors.password.message}
+                                        </p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">Xác nhận mật khẩu *</label>
                                     <input 
                                         type="password"
-                                        {...register('confirmPassword', { required: !user })} 
-                                        className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                        {...register('confirmPassword', { 
+                                            required: !user ? 'Vui lòng xác nhận mật khẩu' : false,
+                                            validate: (val) => {
+                                                if (!user && val !== watch('password')) {
+                                                    return 'Mật khẩu xác nhận không khớp';
+                                                }
+                                                return true;
+                                            }
+                                        })} 
+                                        placeholder="Nhập lại mật khẩu"
+                                        className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors ${
+                                            errors.confirmPassword ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
+                                        }`} 
                                     />
+                                    {errors.confirmPassword && (
+                                        <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
+                                            <span>⚠️</span> {errors.confirmPassword.message}
+                                        </p>
+                                    )}
                                 </div>
                             </>
                         )}
@@ -156,26 +225,55 @@ const UserFormModal = ({ isOpen, onClose, user, onSuccess }) => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Họ và Tên *</label>
                             <input 
-                                {...register('fullName', { required: true })} 
-                                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                {...register('fullName', { required: 'Họ và tên là bắt buộc' })} 
+                                placeholder="VD: Nguyễn Văn A"
+                                className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors ${
+                                    errors.fullName ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
+                                }`} 
                             />
+                            {errors.fullName && (
+                                <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
+                                    <span>⚠️</span> {errors.fullName.message}
+                                </p>
+                            )}
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Số điện thoại</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Số điện thoại *</label>
                             <input 
-                                {...register('phone')} 
-                                className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                type="tel"
+                                {...register('phone', { 
+                                    required: PHONE_ERROR_MESSAGES.REQUIRED,
+                                    pattern: {
+                                        value: PHONE_10_DIGITS_REGEX,
+                                        message: PHONE_ERROR_MESSAGES.INVALID
+                                    }
+                                })} 
+                                onInput={(e) => {
+                                    const cleaned = sanitizePhoneNumber(e.target.value);
+                                    e.target.value = cleaned;
+                                    setValue('phone', cleaned, { shouldValidate: true });
+                                }}
+                                placeholder="VD: 0912345678"
+                                maxLength={10}
+                                className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors ${
+                                    errors.phone ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
+                                }`} 
                             />
+                            {errors.phone && (
+                                <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
+                                    <span>⚠️</span> {errors.phone.message}
+                                </p>
+                            )}
                         </div>
 
                         {role === 'teacher' && (
                             <>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Mã Giáo viên *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Mã Giáo viên (Tự động) *</label>
                                     <input 
-                                        {...register('teacherCode', { required: !user && role === 'teacher' })} 
-                                        disabled={!!user}
-                                        className="w-full px-4 py-2 rounded-lg border border-gray-200 disabled:bg-gray-100 outline-none" 
+                                        {...register('teacherCode')} 
+                                        readOnly
+                                        className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-100 font-mono font-semibold text-blue-600 outline-none cursor-not-allowed" 
                                     />
                                 </div>
                                 <div>
@@ -187,11 +285,11 @@ const UserFormModal = ({ isOpen, onClose, user, onSuccess }) => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">Bộ môn giảng dạy</label>
-                                    <input {...register('subject')} className="w-full px-4 py-2 rounded-lg border border-gray-200 outline-none" />
+                                    <input {...register('subject')} placeholder="VD: Toán học" className="w-full px-4 py-2 rounded-lg border border-gray-200 outline-none" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">Tổ chuyên môn (Department)</label>
-                                    <input {...register('department')} className="w-full px-4 py-2 rounded-lg border border-gray-200 outline-none" />
+                                    <input {...register('department')} placeholder="VD: Tự nhiên" className="w-full px-4 py-2 rounded-lg border border-gray-200 outline-none" />
                                 </div>
                             </>
                         )}
@@ -199,11 +297,11 @@ const UserFormModal = ({ isOpen, onClose, user, onSuccess }) => {
                         {role === 'student' && (
                             <>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Mã Học sinh *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Mã Học sinh (Tự động) *</label>
                                     <input 
-                                        {...register('studentCode', { required: !user && role === 'student' })} 
-                                        disabled={!!user}
-                                        className="w-full px-4 py-2 rounded-lg border border-gray-200 disabled:bg-gray-100 outline-none" 
+                                        {...register('studentCode')} 
+                                        readOnly
+                                        className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-100 font-mono font-semibold text-blue-600 outline-none cursor-not-allowed" 
                                     />
                                 </div>
                                 <div>
@@ -214,12 +312,46 @@ const UserFormModal = ({ isOpen, onClose, user, onSuccess }) => {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Lớp</label>
-                                    <input {...register('classId')} className="w-full px-4 py-2 rounded-lg border border-gray-200 outline-none" />
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Lớp học</label>
+                                    <select 
+                                        {...register('classId')} 
+                                        className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                                    >
+                                        <option value="">-- Chưa phân lớp --</option>
+                                        {classesList.map((c, idx) => (
+                                            <option key={c.id || `cls-opt-${idx}`} value={c.id}>
+                                                {c.className} (Khối {c.grade || ''})
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">SĐT Phụ huynh</label>
-                                    <input {...register('parentPhone')} className="w-full px-4 py-2 rounded-lg border border-gray-200 outline-none" />
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">SĐT Phụ huynh *</label>
+                                    <input 
+                                        type="tel"
+                                        {...register('parentPhone', { 
+                                            required: PHONE_ERROR_MESSAGES.PARENT_REQUIRED,
+                                            pattern: {
+                                                value: PHONE_10_DIGITS_REGEX,
+                                                message: PHONE_ERROR_MESSAGES.PARENT_INVALID
+                                            }
+                                        })} 
+                                        onInput={(e) => {
+                                            const cleaned = sanitizePhoneNumber(e.target.value);
+                                            e.target.value = cleaned;
+                                            setValue('parentPhone', cleaned, { shouldValidate: true });
+                                        }}
+                                        placeholder="VD: 0987654321"
+                                        maxLength={10}
+                                        className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors ${
+                                            errors.parentPhone ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
+                                        }`} 
+                                    />
+                                    {errors.parentPhone && (
+                                        <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
+                                            <span>⚠️</span> {errors.parentPhone.message}
+                                        </p>
+                                    )}
                                 </div>
                             </>
                         )}
@@ -241,6 +373,7 @@ const UserFormModal = ({ isOpen, onClose, user, onSuccess }) => {
 
 const UsersManagement = () => {
     const [users, setUsers] = useState([]);
+    const [classesList, setClassesList] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [roleFilter, setRoleFilter] = useState('');
@@ -251,7 +384,17 @@ const UsersManagement = () => {
 
     useEffect(() => {
         fetchUsers();
+        fetchClasses();
     }, []);
+
+    const fetchClasses = async () => {
+        try {
+            const res = await api.get('/classes');
+            setClassesList(res.data || []);
+        } catch (err) {
+            console.error('Lỗi khi tải danh sách lớp học:', err);
+        }
+    };
 
     const fetchUsers = async () => {
         try {
@@ -485,6 +628,7 @@ const UsersManagement = () => {
                     isOpen={isModalOpen} 
                     onClose={() => setIsModalOpen(false)} 
                     user={selectedUser} 
+                    classesList={classesList}
                     onSuccess={fetchUsers} 
                 />
             </AnimatePresence>

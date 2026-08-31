@@ -3,9 +3,9 @@ import prisma from '../prismaClient.js';
 // Tạo mới hồ sơ học phí
 export const createFeeProfile = async (req, res) => {
     try {
-        const { name, amount, targetGrades, academicYear, semester } = req.body;
+        const { name, amount, targetGrades, targetClassIds, academicYear, semester } = req.body;
 
-        if (!name || !amount || !targetGrades || !academicYear || !semester) {
+        if (!name || !amount || !academicYear || !semester) {
             return res.status(400).json({ message: 'Vui lòng cung cấp đầy đủ thông tin' });
         }
 
@@ -13,7 +13,8 @@ export const createFeeProfile = async (req, res) => {
             data: {
                 name,
                 amount: parseFloat(amount),
-                targetGrades,
+                targetGrades: Array.isArray(targetGrades) ? targetGrades.map(Number) : [],
+                targetClassIds: Array.isArray(targetClassIds) ? targetClassIds : [],
                 academicYear,
                 semester
             }
@@ -77,7 +78,7 @@ export const getFeeProfiles = async (req, res) => {
 export const updateFeeProfile = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, amount, targetGrades, academicYear, semester } = req.body;
+        const { name, amount, targetGrades, targetClassIds, academicYear, semester } = req.body;
 
         const feeProfile = await prisma.feeProfile.findUnique({ where: { id } });
         if (!feeProfile) {
@@ -88,8 +89,9 @@ export const updateFeeProfile = async (req, res) => {
             where: { id },
             data: {
                 name: name || feeProfile.name,
-                amount: amount ? parseFloat(amount) : feeProfile.amount,
-                targetGrades: targetGrades || feeProfile.targetGrades,
+                amount: amount !== undefined ? parseFloat(amount) : feeProfile.amount,
+                targetGrades: targetGrades !== undefined ? (Array.isArray(targetGrades) ? targetGrades.map(Number) : []) : feeProfile.targetGrades,
+                targetClassIds: targetClassIds !== undefined ? (Array.isArray(targetClassIds) ? targetClassIds : []) : feeProfile.targetClassIds,
                 academicYear: academicYear || feeProfile.academicYear,
                 semester: semester || feeProfile.semester
             }
@@ -108,7 +110,7 @@ export const updateFeeProfile = async (req, res) => {
 // Gán hồ sơ học phí cho học sinh
 export const assignFeeProfile = async (req, res) => {
     try {
-        const { feeProfileId, targetGrades, classId } = req.body;
+        const { feeProfileId, targetGrades, classId, targetClassIds } = req.body;
 
         if (!feeProfileId) {
             return res.status(400).json({ message: 'Vui lòng cung cấp ID hồ sơ học phí' });
@@ -124,19 +126,21 @@ export const assignFeeProfile = async (req, res) => {
 
         let whereCondition = {};
         
-        if (classId) {
+        if (targetClassIds && targetClassIds.length > 0) {
+            whereCondition.classId = { in: targetClassIds };
+        } else if (classId) {
             whereCondition.classId = classId;
         } else if (targetGrades && targetGrades.length > 0) {
             // Find classes that belong to the target grades
             const classes = await prisma.class.findMany({
                 where: {
-                    grade: { in: targetGrades }
+                    grade: { in: targetGrades.map(Number) }
                 }
             });
             const classIds = classes.map(c => c.id);
             whereCondition.classId = { in: classIds };
         } else {
-            return res.status(400).json({ message: 'Vui lòng cung cấp classId hoặc targetGrades' });
+            return res.status(400).json({ message: 'Vui lòng chọn khối hoặc lớp áp dụng' });
         }
 
         // Lấy tất cả học sinh thỏa mãn điều kiện
@@ -145,7 +149,7 @@ export const assignFeeProfile = async (req, res) => {
         });
 
         if (students.length === 0) {
-            return res.status(400).json({ message: 'Không tìm thấy học sinh nào phù hợp' });
+            return res.status(400).json({ message: 'Không tìm thấy học sinh nào phù hợp với phạm vi đã chọn' });
         }
 
         // Lấy danh sách các hóa đơn đã tồn tại cho hồ sơ này để tránh tạo trùng

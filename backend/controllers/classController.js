@@ -46,11 +46,27 @@ export const getClassById = async (req, res) => {
     }
 };
 
+const extractGrade = (className) => {
+    if (!className || typeof className !== 'string') return null;
+    const match = className.trim().match(/^(10|11|12)/);
+    return match ? parseInt(match[1], 10) : null;
+};
+
 export const createClass = async (req, res) => {
     try {
-        const { className, grade, schoolYear, homeroomTeacherId, status } = req.body;
+        const { className, schoolYear, homeroomTeacherId, status } = req.body;
 
-        const classExists = await prisma.class.findFirst({ where: { className } });
+        if (!className || !className.trim()) {
+            return res.status(400).json({ message: 'Tên lớp không được để trống' });
+        }
+
+        const trimmedClassName = className.trim();
+        const grade = extractGrade(trimmedClassName);
+        if (!grade) {
+            return res.status(400).json({ message: 'Tên lớp không hợp lệ. Tên lớp phải bắt đầu bằng 10, 11 hoặc 12 (VD: 10A1, 11B2, 12 Tin)' });
+        }
+
+        const classExists = await prisma.class.findFirst({ where: { className: trimmedClassName } });
         if (classExists) {
             return res.status(400).json({ message: 'Tên lớp đã tồn tại' });
         }
@@ -66,8 +82,8 @@ export const createClass = async (req, res) => {
 
         const newClass = await prisma.class.create({
             data: {
-                className,
-                grade: parseInt(grade) || 10,
+                className: trimmedClassName,
+                grade: grade,
                 academicYear: schoolYear || '2025-2026',
                 homeroomTeacherId: homeroomTeacherId || null,
                 status: status || 'active'
@@ -90,6 +106,30 @@ export const updateClass = async (req, res) => {
 
         const { className, homeroomTeacherId, schoolYear, status } = req.body;
 
+        let trimmedClassName = undefined;
+        let grade = undefined;
+
+        if (className !== undefined) {
+            trimmedClassName = className.trim();
+            if (!trimmedClassName) {
+                return res.status(400).json({ message: 'Tên lớp không được để trống' });
+            }
+            grade = extractGrade(trimmedClassName);
+            if (!grade) {
+                return res.status(400).json({ message: 'Tên lớp không hợp lệ. Tên lớp phải bắt đầu bằng 10, 11 hoặc 12 (VD: 10A1, 11B2, 12 Tin)' });
+            }
+
+            const existingClass = await prisma.class.findFirst({
+                where: {
+                    className: trimmedClassName,
+                    id: { not: classInfo.id }
+                }
+            });
+            if (existingClass) {
+                return res.status(400).json({ message: 'Tên lớp đã tồn tại ở một lớp khác' });
+            }
+        }
+
         if (homeroomTeacherId && homeroomTeacherId !== classInfo.homeroomTeacherId) {
             const teacherAssigned = await prisma.class.findFirst({
                 where: { 
@@ -106,7 +146,8 @@ export const updateClass = async (req, res) => {
         const updated = await prisma.class.update({
             where: { id: req.params.id },
             data: {
-                className: className || undefined,
+                className: trimmedClassName || undefined,
+                grade: grade !== undefined ? grade : undefined,
                 homeroomTeacherId: homeroomTeacherId !== undefined ? homeroomTeacherId : undefined,
                 status: status || undefined
             }
