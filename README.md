@@ -1,31 +1,53 @@
-# Student Management System
+# Hệ Thống Quản Lý Trường Học (School Management System)
 
-A full-stack student management application featuring a React/Vite frontend and an Express/MongoDB backend.
+Ứng dụng quản lý trường học toàn diện với Frontend (React/Vite) và Backend (Node.js/Express, PostgreSQL, Prisma ORM).
 
-## Project Structure
+---
 
-The project has been bundled into two main directories:
+## 🚀 Cách 1: Khởi Chạy Nhanh Bằng Docker (Khuyên Dùng - Không Cần File .env)
 
-- `frontend/`: The React application using Vite and Tailwind CSS.
-- `backend/`: The Express API server using MongoDB.
+Người dùng hoặc người chấm chỉ cần cài **Docker Desktop** và chạy duy nhất một lệnh trong thư mục gốc `DoAnBackEnd`:
 
-## Getting Started
+```bash
+docker compose up --build -d
+```
 
-1. **Install dependencies for all projects**:
-   In the root directory, run:
-   ```bash
-   npm run install:all
-   ```
+### Các dịch vụ tự động khởi động:
+- **Frontend (Giao diện người dùng)**: [http://localhost](http://localhost) (Port `80`)
+- **Backend (API RESTful)**: [http://localhost:5000](http://localhost:5000) (Port `5000`)
+- **PostgreSQL Database**: Port `5432` (Tự động khởi tạo bảng qua Prisma và tự tạo tài khoản Admin mẫu)
 
-2. **Environment Variables**:
-   Ensure you have a `.env` file in the `backend/` directory with `MONGO_URI` and any other required variables.
+### Tài khoản đăng nhập mặc định:
+- **Tài khoản (Username / Email)**: `admin` (hoặc `admin@school.edu.vn`)
+- **Mật khẩu (Password)**: `admin123`
 
-3. **Start the application**:
-   To run both frontend and backend concurrently in development mode, run:
-   ```bash
-   npm run dev
-   ```
+### Để dừng hệ thống:
+```bash
+docker compose down
+```
 
-   Alternatively, you can run them separately:
-   - Frontend: `npm run dev:frontend`
-   - Backend: `npm run dev:backend`
+---
+
+## 💻 Cách 2: Chạy Thủ Công Chế Độ Development (Không Dùng Docker)
+
+### 1. Cài đặt dependencies:
+```bash
+# Cài đặt thư mục gốc
+npm install
+
+# Cài đặt backend & frontend
+npm run install:all
+```
+
+### 2. Cấu hình biến môi trường:
+Tạo file `.env` trong thư mục `backend/` dựa trên mẫu `backend/.env.example`:
+```env
+PORT=5000
+DATABASE_URL="postgresql://user:password@localhost:5432/school_management?sslmode=disable"
+JWT_SECRET=supersecretkey_for_dev_only
+```
+
+### 3. Chạy ứng dụng:
+```bash
+npm run dev
+```
