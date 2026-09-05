@@ -140,7 +140,7 @@ const Dashboard = () => {
             api.get('/classes').catch(() => ({ data: [] })),
             api.get('/users').catch(() => ({ data: [] })),
             api.get('/subjects').catch(() => ({ data: [] })),
-            api.get('/tuition/summary').catch(() => ({ data: { data: {} } }))
+            api.get('/tuition/dashboard-summary').catch(() => ({ data: { data: {} } }))
           ]);
 
           const teachers = (usersRes.data || []).filter(u => u.role === 'teacher');

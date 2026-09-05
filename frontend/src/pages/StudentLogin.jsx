@@ -58,15 +58,15 @@ const StudentLogin = () => {
             )}
             <form onSubmit={handleLogin} className="space-y-6">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email học sinh</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Mã Học sinh, Email hoặc Tên đăng nhập</label>
                     <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Mail size={20} className="text-gray-400" />
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                            <Mail size={18} className="text-gray-400" />
                         </div>
                         <input
-                            type="email"
-                            className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all sm:text-sm bg-gray-50"
-                            placeholder="mssv@school.edu.vn"
+                            type="text"
+                            className="block w-full pl-10 pr-3.5 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-sm bg-gray-50 font-medium"
+                            placeholder="student, HS123456 hoặc hs@school.edu.vn"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required

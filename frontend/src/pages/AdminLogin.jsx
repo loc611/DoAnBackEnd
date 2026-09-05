@@ -58,15 +58,15 @@ const AdminLogin = () => {
             )}
             <form onSubmit={handleLogin} className="space-y-6">
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Email quản trị</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Tên đăng nhập hoặc Email Quản trị</label>
                     <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Mail size={20} className="text-slate-400" />
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                            <Mail size={18} className="text-slate-400" />
                         </div>
                         <input
-                            type="email"
-                            className="block w-full pl-10 pr-3 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-slate-800 focus:border-transparent outline-none transition-all sm:text-sm bg-slate-50"
-                            placeholder="admin@school.edu.vn"
+                            type="text"
+                            className="block w-full pl-10 pr-3.5 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-slate-800 focus:border-transparent outline-none transition-all text-sm bg-slate-50 font-medium"
+                            placeholder="admin hoặc admin@school.edu.vn"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required

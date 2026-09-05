@@ -33,13 +33,19 @@ export const getClassById = async (req, res) => {
         const classInfo = await prisma.class.findUnique({
             where: { id: req.params.id },
             include: {
-                homeroomTeacher: true
+                homeroomTeacher: true,
+                _count: {
+                    select: { students: true }
+                }
             }
         });
         if (!classInfo) {
             return res.status(404).json({ message: 'Không tìm thấy lớp học' });
         }
-        res.json(classInfo);
+        res.json({
+            ...classInfo,
+            studentCount: classInfo._count?.students || 0
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Lỗi server' });

@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'school-management-api',
       script: 'npm',
-      args: 'run start:prod --workspace=server@1.0.0', // Gọi script trong workspace backend
+      args: 'run start:prod --workspace=backend', // Gọi script trong workspace backend
       cwd: './', // Root directory
       instances: 1,
       autorestart: true,

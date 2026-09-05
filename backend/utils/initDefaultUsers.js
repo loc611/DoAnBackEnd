@@ -56,7 +56,6 @@ export const initDefaultUsers = async () => {
                         username: 'admin',
                         email: 'admin@school.edu.vn',
                         password: adminPassHash,
-                        role: 'admin',
                         status: 'active'
                     }
                 });
@@ -67,6 +66,12 @@ export const initDefaultUsers = async () => {
                         phone: '0988888888'
                     }
                 });
+                const adminRole = await tx.role.findUnique({ where: { name: 'admin' } });
+                if (adminRole) {
+                    await tx.userRole.create({
+                        data: { userId: createdUser.id, roleId: adminRole.id }
+                    });
+                }
             });
             console.log('✅ Default Admin created: admin / admin123 (or admin@school.edu.vn / admin123)');
         } else {
@@ -79,22 +84,30 @@ export const initDefaultUsers = async () => {
                     }
                 });
             }
-            const isMatch = await bcrypt.compare('admin123', adminUser.password);
-            if (!isMatch) {
-                await prisma.user.update({
-                    where: { id: adminUser.id },
-                    data: { 
-                        password: adminPassHash,
-                        status: 'active' 
-                    }
+            await prisma.user.update({
+                where: { id: adminUser.id },
+                data: { 
+                    password: adminPassHash,
+                    role: 'admin',
+                    status: 'active' 
+                }
+            });
+            const adminRole = await prisma.role.findUnique({ where: { name: 'admin' } });
+            if (adminRole) {
+                await prisma.userRole.upsert({
+                    where: { userId_roleId: { userId: adminUser.id, roleId: adminRole.id } },
+                    update: {},
+                    create: { userId: adminUser.id, roleId: adminRole.id }
                 });
-                console.log('🔑 Admin password reset to admin123');
             }
-            console.log('✅ Admin account is ready.');
+            console.log('✅ Admin account synced: admin / admin123');
         }
 
         // 2. Check Teachers
         const teacherPassHash = await bcrypt.hash('teacher123', 10);
+        const teacherRole = await prisma.role.findUnique({ where: { name: 'subject_teacher' } }) ||
+                            await prisma.role.findUnique({ where: { name: 'teacher' } });
+
         for (const teacherData of DEFAULT_TEACHERS) {
             const existingTeacher = await prisma.teacher.findFirst({
                 where: {
@@ -138,30 +151,53 @@ export const initDefaultUsers = async () => {
                                 specialization: teacherData.specialization
                             }
                         });
+                        if (teacherRole) {
+                            await tx.userRole.create({
+                                data: { userId: createdUser.id, roleId: teacherRole.id }
+                            });
+                        }
                     });
                     console.log(`✅ Default Teacher created: ${teacherData.teacherCode} - ${teacherData.fullName}`);
+                }
+            } else if (existingTeacher.user) {
+                await prisma.user.update({
+                    where: { id: existingTeacher.user.id },
+                    data: {
+                        password: teacherPassHash,
+                        role: 'teacher',
+                        status: 'active'
+                    }
+                });
+                if (teacherRole) {
+                    await prisma.userRole.upsert({
+                        where: { userId_roleId: { userId: existingTeacher.user.id, roleId: teacherRole.id } },
+                        update: {},
+                        create: { userId: existingTeacher.user.id, roleId: teacherRole.id }
+                    });
                 }
             }
         }
 
         // 3. Check Student
+        const studentRole = await prisma.role.findUnique({ where: { name: 'student' } });
         const studentUser = await prisma.user.findFirst({
             where: {
                 OR: [
                     { username: 'hs001' },
+                    { email: 'hs001@school.edu.vn' },
                     { email: 'student@school.edu.vn' }
                 ]
             },
             include: { student: true }
         });
 
+        const studentPassHash = await bcrypt.hash('student123', 10);
         if (!studentUser) {
-            const studentPassHash = await bcrypt.hash('student123', 10);
             await prisma.$transaction(async (tx) => {
                 const createdUser = await tx.user.create({
                     data: {
                         username: 'hs001',
-                        email: 'student@school.edu.vn',
+                        email: 'hs001@school.edu.vn',
                         password: studentPassHash,
                         role: 'student',
                         status: 'active'
@@ -173,11 +209,33 @@ export const initDefaultUsers = async () => {
                         studentCode: 'HS001',
                         fullName: 'Trần Học Sinh',
                         gender: 'Nam',
-                        parentPhone: '0955555555'
+                        phone: '0955555555'
                     }
                 });
+                if (studentRole) {
+                    await tx.userRole.create({
+                        data: { userId: createdUser.id, roleId: studentRole.id }
+                    });
+                }
             });
-            console.log('✅ Default Student created: hs001 / student123');
+            console.log('✅ Default Student created: hs001@school.edu.vn / student123');
+        } else {
+            await prisma.user.update({
+                where: { id: studentUser.id },
+                data: {
+                    email: 'hs001@school.edu.vn',
+                    password: studentPassHash,
+                    role: 'student',
+                    status: 'active'
+                }
+            });
+            if (studentRole) {
+                await prisma.userRole.upsert({
+                    where: { userId_roleId: { userId: studentUser.id, roleId: studentRole.id } },
+                    update: {},
+                    create: { userId: studentUser.id, roleId: studentRole.id }
+                });
+            }
         }
 
         // 4. Check Subjects

@@ -178,6 +178,13 @@ export const syncFromGoogleSheets = async (req, res) => {
                                 }
                             });
                             userId = newUser.id;
+
+                            const studentRole = await tx.role.findUnique({ where: { name: 'student' } });
+                            if (studentRole) {
+                                await tx.userRole.create({
+                                    data: { userId: newUser.id, roleId: studentRole.id }
+                                });
+                            }
                         }
 
                         await tx.student.create({

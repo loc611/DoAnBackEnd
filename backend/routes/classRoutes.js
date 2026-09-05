@@ -20,13 +20,13 @@ router.get('/', getClasses);
 router.get('/:id', getClassById);
 router.get('/:id/students', getStudentsInClass);
 
-// Mutation routes: Only Admin can modify
+// Mutation routes: Admin & Teacher (Homeroom)
 router.post('/', authorize('admin'), createClass);
 router.put('/:id', authorize('admin'), updateClass);
 router.delete('/:id', authorize('admin'), deleteClass);
 
-router.post('/:id/students', authorize('admin'), addStudentsToClass);
-router.delete('/:id/students/:studentId', authorize('admin'), removeStudentFromClass);
+router.post('/:id/students', authorize('admin', 'teacher'), addStudentsToClass);
+router.delete('/:id/students/:studentId', authorize('admin', 'teacher'), removeStudentFromClass);
 
 export default router;
 

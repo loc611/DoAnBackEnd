@@ -211,12 +211,12 @@ const ClassDetails = () => {
                     <h3 className="text-lg font-bold text-gray-800 border-b pb-3 mb-4">Thông tin chung</h3>
                     <div className="space-y-4">
                         <div>
-                            <p className="text-sm text-gray-500 mb-1">Mã lớp</p>
-                            <p className="font-semibold text-gray-800">{classInfo.classCode}</p>
+                            <p className="text-sm text-gray-500 mb-1">Tên lớp</p>
+                            <p className="font-semibold text-gray-800">{classInfo.className || classInfo.classCode}</p>
                         </div>
                         <div>
                             <p className="text-sm text-gray-500 mb-1">Khối - Năm học</p>
-                            <p className="font-medium text-gray-800">Khối {classInfo.grade} ({classInfo.schoolYear})</p>
+                            <p className="font-medium text-gray-800">Khối {classInfo.grade} ({classInfo.academicYear || classInfo.schoolYear || '2026-2027'})</p>
                         </div>
                         <div>
                             <p className="text-sm text-gray-500 mb-1">Giáo viên chủ nhiệm</p>

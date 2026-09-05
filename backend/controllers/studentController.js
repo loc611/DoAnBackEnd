@@ -1,5 +1,6 @@
 import prisma from '../prismaClient.js';
 import bcrypt from 'bcryptjs';
+import AuditLogService from '../services/auditLogService.js';
 import { 
     isValidPhoneNumber, 
     isValidStudentCode, 
@@ -50,6 +51,11 @@ export const getStudentById = async (req, res) => {
                         homeroomTeacher: { select: { fullName: true, phone: true } }
                     } 
                 },
+                guardianLinks: {
+                    include: {
+                        parent: true
+                    }
+                },
                 grades: true,
                 attendances: { orderBy: { date: 'desc' }, take: 10 },
                 feeBills: { 
@@ -61,6 +67,33 @@ export const getStudentById = async (req, res) => {
         
         if (!student) {
             return res.status(404).json({ message: 'Không tìm thấy học sinh' });
+        }
+
+        // Kiểm tra quyền xem hồ sơ cơ bản
+        if (req.user && req.user.can) {
+            const basicCheck = await req.user.can('profile.view_basic', { student, studentId: student.id });
+            if (!basicCheck.allowed) {
+                return res.status(403).json({ success: false, message: basicCheck.reason });
+            }
+
+            // Kiểm tra quyền xem hồ sơ nhạy cảm (Khuyết tật, sức khỏe đặc biệt, phán quyết ly hôn)
+            const sensitiveCheck = await req.user.can('profile.view_sensitive', { student, studentId: student.id });
+            if (!sensitiveCheck.allowed) {
+                // Che các trường bảo mật cao
+                student.specialNeedsNote = '[BẢO MẬT: Chỉ Cán bộ Tham vấn, GVCN và BGH mới có quyền xem]';
+            } else if (student.specialNeedsNote) {
+                // Ghi vết truy cập hồ sơ nhạy cảm
+                await AuditLogService.log({
+                    userId: req.user.id,
+                    action: 'VIEW_SENSITIVE_PROFILE',
+                    module: 'profile',
+                    resource: 'Student',
+                    resourceId: student.id,
+                    reason: 'Truy cập hồ sơ y tế / tâm lý / nhu cầu đặc biệt của học sinh',
+                    req,
+                    severity: 'warning'
+                });
+            }
         }
         
         res.json(student);
@@ -143,6 +176,14 @@ export const createStudent = async (req, res) => {
                     status: 'active'
                 }
             });
+
+            // Tự động liên kết vai trò student trong RBAC Scope
+            const studentRole = await tx.role.findUnique({ where: { name: 'student' } });
+            if (studentRole) {
+                await tx.userRole.create({
+                    data: { userId: user.id, roleId: studentRole.id }
+                });
+            }
 
             return await tx.student.create({
                 data: {
