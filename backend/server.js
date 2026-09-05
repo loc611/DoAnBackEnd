@@ -14,9 +14,11 @@ import tuitionRoutes from './routes/tuitionRoutes.js';
 import attendanceRoutes from './routes/attendanceRoutes.js';
 import examRoutes from './routes/examRoutes.js';
 import systemSettingRoutes from './routes/systemSettingRoutes.js';
+import auditLogRoutes from './routes/auditLogRoutes.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { initDefaultUsers } from './utils/initDefaultUsers.js';
+import { seedRbacScopeData } from './utils/seedRbacScope.js';
 
 dotenv.config();
 
@@ -64,6 +66,7 @@ app.use(cors({
 app.use(express.json());
 
 // Routes
+app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/users', userRoutes);
@@ -77,9 +80,10 @@ app.use('/api/tuition', tuitionRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/settings', systemSettingRoutes);
+app.use('/api/audit-logs', auditLogRoutes);
 
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', message: 'Server is running with PostgreSQL (Prisma)' });
+    res.json({ status: 'ok', message: 'Server is running with PostgreSQL (Prisma) and RBAC+Scope Engine' });
 });
 
 // Error handling middleware
@@ -92,7 +96,12 @@ const PORT = process.env.PORT || 5000;
 
 const server = app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
-    await initDefaultUsers();
+    try {
+        await initDefaultUsers();
+        await seedRbacScopeData();
+    } catch (e) {
+        console.error('Initial seeding notice:', e.message);
+    }
 });
 
 server.on('error', (err) => {

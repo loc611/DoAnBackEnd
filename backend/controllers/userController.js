@@ -43,10 +43,21 @@ export const getUsers = async (req, res) => {
 
 export const createUser = async (req, res) => {
     try {
-        const { username, email, password, role, ...profileData } = req.body;
+        let { username, email, password, role, ...profileData } = req.body;
 
         if (!password || password.length < 6) {
             return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 6 ký tự' });
+        }
+
+        const cleanUsername = String(username).trim();
+        let cleanEmail = email ? String(email).trim().toLowerCase() : '';
+        
+        // Chuẩn hóa bắt buộc đuôi @school.edu.vn cho toàn bộ tài khoản
+        if (!cleanEmail) {
+            cleanEmail = `${cleanUsername}@school.edu.vn`;
+        } else if (!cleanEmail.endsWith('@school.edu.vn')) {
+            const prefix = cleanEmail.includes('@') ? cleanEmail.split('@')[0] : cleanEmail;
+            cleanEmail = `${prefix}@school.edu.vn`;
         }
 
         // Validate SĐT cá nhân (bắt buộc đúng 10 số & duy nhất toàn hệ thống)
@@ -73,7 +84,7 @@ export const createUser = async (req, res) => {
 
         const userExists = await prisma.user.findFirst({
             where: {
-                OR: [{ email }, { username }]
+                OR: [{ email: cleanEmail }, { username: cleanUsername }]
             }
         });
         
@@ -113,13 +124,21 @@ export const createUser = async (req, res) => {
         const newUser = await prisma.$transaction(async (tx) => {
             const user = await tx.user.create({
                 data: {
-                    username,
-                    email,
+                    username: cleanUsername,
+                    email: cleanEmail,
                     password: hashedPassword,
                     role,
                     status: 'active'
                 }
             });
+
+            // Gán vai trò tương ứng trong RBAC Scope
+            const assignedRole = await tx.role.findUnique({ where: { name: role } });
+            if (assignedRole) {
+                await tx.userRole.create({
+                    data: { userId: user.id, roleId: assignedRole.id }
+                });
+            }
 
             if (role === 'admin') {
                 await tx.admin.create({
@@ -148,7 +167,8 @@ export const createUser = async (req, res) => {
                         teacherCode: code,
                         fullName: profileData.fullName ? profileData.fullName.trim() : '',
                         phone: profileData.phone || null,
-                        specialization: profileData.subject || null
+                        specialization: profileData.subject || profileData.specialization || null,
+                        position: profileData.position || 'Giáo viên bộ môn'
                     }
                 });
             } else if (role === 'student') {
@@ -231,12 +251,14 @@ export const updateUser = async (req, res) => {
                 }
             });
         } else if (user.role === 'teacher') {
+            const { position } = req.body;
             await prisma.teacher.update({
                 where: { userId: user.id },
                 data: { 
                     fullName: fullName !== undefined ? fullName.trim() : undefined, 
                     phone: phone !== undefined ? (phone === '' ? null : phone) : undefined, 
-                    specialization: subject 
+                    specialization: subject !== undefined ? subject : undefined,
+                    position: position !== undefined ? position : undefined
                 }
             });
         } else if (user.role === 'student') {
@@ -274,7 +296,12 @@ export const updateStatus = async (req, res) => {
             data: { status: req.body.status }
         });
 
-        res.json({ message: `Đã ${updatedUser.status === 'active' ? 'mở khóa' : 'khóa'} tài khoản` });
+        let statusText = 'cập nhật trạng thái';
+        if (updatedUser.status === 'active') statusText = 'kích hoạt';
+        else if (updatedUser.status === 'blocked') statusText = 'khóa';
+        else if (updatedUser.status === 'suspended') statusText = 'đình chỉ';
+
+        res.json({ message: `Đã ${statusText} tài khoản thành công`, status: updatedUser.status });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Lỗi khi đổi trạng thái' });

@@ -69,6 +69,38 @@ export const createSubject = async (req, res) => {
     }
 };
 
+export const updateSubject = async (req, res) => {
+    try {
+        const { name, grade, periodsPerWeek, credits, type, teacherId } = req.body;
+        const subject = await prisma.subject.findUnique({ where: { id: req.params.id } });
+        if (!subject) return res.status(404).json({ message: 'Không tìm thấy môn học' });
+
+        const updated = await prisma.subject.update({
+            where: { id: req.params.id },
+            data: {
+                name: name !== undefined ? name.trim() : undefined,
+                grade: grade !== undefined ? parseInt(grade, 10) : undefined,
+                periodsPerWeek: periodsPerWeek !== undefined ? parseInt(periodsPerWeek, 10) : undefined,
+                credits: credits !== undefined ? parseInt(credits, 10) : undefined,
+                type: type || undefined,
+                teacherId: teacherId !== undefined ? (teacherId === '' ? null : teacherId) : undefined
+            },
+            include: {
+                teacher: {
+                    select: { fullName: true, teacherCode: true }
+                }
+            }
+        });
+        res.json({
+            ...updated,
+            teacherId: updated.teacher ? { fullName: updated.teacher.fullName, teacherCode: updated.teacher.teacherCode } : null
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: error.message || 'Lỗi khi cập nhật môn học' });
+    }
+};
+
 export const deleteSubject = async (req, res) => {
     try {
         const subject = await prisma.subject.findUnique({ where: { id: req.params.id } });

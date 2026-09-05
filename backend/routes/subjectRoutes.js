@@ -1,5 +1,5 @@
 import express from 'express';
-import { getSubjects, createSubject, deleteSubject } from '../controllers/subjectController.js';
+import { getSubjects, createSubject, updateSubject, deleteSubject } from '../controllers/subjectController.js';
 import { protect, authorize } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
@@ -9,6 +9,7 @@ router.route('/')
     .post(protect, authorize('admin'), createSubject);
 
 router.route('/:id')
+    .put(protect, authorize('admin'), updateSubject)
     .delete(protect, authorize('admin'), deleteSubject);
 
 export default router;

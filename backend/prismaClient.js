@@ -7,8 +7,13 @@ dotenv.config();
 const { Pool } = pkg;
 const { PrismaClient } = pkgPrisma;
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+let prisma;
+try {
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const adapter = new PrismaPg(pool);
+  prisma = new PrismaClient({ adapter });
+} catch (e) {
+  prisma = new PrismaClient();
+}
 
 export default prisma;
