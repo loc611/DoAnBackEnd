@@ -110,8 +110,29 @@ model Subject {
   teacherId      String?
   teacher        Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
 
+  subjectEnrollments SubjectEnrollment[]
+  attendances        Attendance[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ==========================================
+// 📚 SUBJECT ENROLLMENT (Học sinh học môn tự chọn/chuyên đề)
+// ==========================================
+model SubjectEnrollment {
+  id           String   @id @default(uuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subjectId    String
+  subject      Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  academicYear String   @default("2026-2027")
+  semester     String   @default("HK1_2026")
+  createdAt    DateTime @default(now())
+
+  @@unique([studentId, subjectId, semester])
+  @@index([studentId])
+  @@index([subjectId])
 }
 
 // ==========================================
@@ -133,9 +154,10 @@ model Student {
   classId     String?
   class       Class?    @relation(fields: [classId], references: [id], onDelete: SetNull)
 
-  grades      Grade[]
-  attendances Attendance[]
-  feeBills    FeeBill[]
+  grades             Grade[]
+  attendances        Attendance[]
+  subjectEnrollments SubjectEnrollment[]
+  feeBills           FeeBill[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -171,21 +193,28 @@ model Schedule {
 // 📊 ATTENDANCE, EXAM & GRADES
 // ==========================================
 model Attendance {
-  id         String   @id @default(uuid())
-  studentId  String
-  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  classId    String
-  class      Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
-  date       DateTime
-  session    String   @default("morning") // 'morning', 'afternoon'
-  status     String   @default("present") // 'present', 'late', 'excused', 'unexcused'
-  note       String?
-  markedById String?
+  id           String   @id @default(uuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId      String
+  class        Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  date         DateTime
+  session      String   @default("morning") // 'morning', 'afternoon'
+  periodNumber Int      @default(1)         // Tiết 1..10
+  periodName   String   @default("Tiết 1")  // Tên hiển thị e.g. "Tiết 1 (07:00 - 07:45)"
+  subjectId    String?
+  subject      Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  subjectName  String   @default("")
+  status       String   @default("present") // 'present', 'late', 'excused', 'unexcused'
+  note         String?
+  markedById   String?
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  @@unique([studentId, classId, date, session])
+  @@unique([studentId, classId, date, periodNumber])
+  @@index([classId, date, periodNumber])
+  @@index([studentId, date])
 }
 
 model ExamSchedule {

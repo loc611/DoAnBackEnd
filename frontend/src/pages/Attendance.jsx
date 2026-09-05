@@ -14,7 +14,11 @@ import {
   RefreshCw,
   Phone,
   Printer,
-  Sparkles
+  Sparkles,
+  BookOpen,
+  Check,
+  CalendarX,
+  GraduationCap
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -22,7 +26,13 @@ const Attendance = () => {
   const [classes, setClasses] = useState([]);
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [selectedSession, setSelectedSession] = useState('morning');
+  
+  // Timetable periods state
+  const [periodsLoading, setPeriodsLoading] = useState(false);
+  const [timetableInfo, setTimetableInfo] = useState({ periods: [], dayName: '' });
+  const [selectedPeriod, setSelectedPeriod] = useState(null);
+
+  // Attendance records state
   const [attendanceData, setAttendanceData] = useState(null);
   const [records, setRecords] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,12 +56,46 @@ const Attendance = () => {
     fetchClasses();
   }, []);
 
-  // Fetch attendance records for selected class, date and session
+  // Fetch timetable periods for selected class & date
+  useEffect(() => {
+    const fetchTimetablePeriods = async () => {
+      if (!selectedClass || !selectedDate) return;
+      setPeriodsLoading(true);
+      try {
+        const res = await api.get(`/attendance/periods-by-date?classId=${selectedClass}&date=${selectedDate}`);
+        setTimetableInfo(res.data);
+        
+        // Auto-select first period if available, or keep current if still valid
+        if (res.data.periods && res.data.periods.length > 0) {
+          const currentValid = res.data.periods.some(p => p.periodNumber === selectedPeriod);
+          if (!currentValid) {
+            setSelectedPeriod(res.data.periods[0].periodNumber);
+          }
+        } else {
+          setSelectedPeriod(null);
+        }
+      } catch (err) {
+        console.error('Lỗi tải thời khóa biểu:', err);
+      } finally {
+        setPeriodsLoading(false);
+      }
+    };
+
+    fetchTimetablePeriods();
+  }, [selectedClass, selectedDate]);
+
+  // Fetch attendance records when class, date or period changes
   const fetchAttendance = async () => {
-    if (!selectedClass) return;
+    if (!selectedClass || selectedPeriod === null) {
+      setAttendanceData(null);
+      setRecords([]);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await api.get(`/attendance/class/${selectedClass}?date=${selectedDate}&session=${selectedSession}`);
+      const res = await api.get(
+        `/attendance/class/${selectedClass}?date=${selectedDate}&periodNumber=${selectedPeriod}`
+      );
       setAttendanceData(res.data);
       setRecords(res.data.records || []);
     } catch (err) {
@@ -63,8 +107,16 @@ const Attendance = () => {
   };
 
   useEffect(() => {
-    fetchAttendance();
-  }, [selectedClass, selectedDate, selectedSession]);
+    if (selectedPeriod !== null) {
+      fetchAttendance();
+    }
+  }, [selectedClass, selectedDate, selectedPeriod]);
+
+  // Find currently active period details
+  const activePeriod = useMemo(() => {
+    if (!timetableInfo.periods || selectedPeriod === null) return null;
+    return timetableInfo.periods.find(p => p.periodNumber === selectedPeriod) || null;
+  }, [timetableInfo.periods, selectedPeriod]);
 
   // Handle single student status change
   const handleStatusChange = (studentId, newStatus) => {
@@ -94,20 +146,35 @@ const Attendance = () => {
 
   // Save attendance
   const handleSave = async () => {
-    if (!selectedClass || records.length === 0) return;
+    if (!selectedClass || selectedPeriod === null || records.length === 0) return;
     setSaving(true);
     try {
       await api.post('/attendance/batch', {
         classId: selectedClass,
         date: selectedDate,
-        session: selectedSession,
+        periodNumber: selectedPeriod,
+        periodName: activePeriod?.periodName || `Tiết ${selectedPeriod}`,
+        subjectName: activePeriod?.subjectName || '',
+        subjectId: activePeriod?.subjectId || null,
         records: records.map(r => ({
           studentId: r.studentId,
           status: r.status,
           note: r.note
         }))
       });
-      setNotification({ type: 'success', message: 'Lưu bảng điểm danh thành công!' });
+      setNotification({ 
+        type: 'success', 
+        message: `Lưu điểm danh thành công: ${activePeriod?.periodName || 'Tiết ' + selectedPeriod} - Môn ${activePeriod?.subjectName || ''}` 
+      });
+
+      // Update marked state in current timetable list
+      setTimetableInfo(prev => ({
+        ...prev,
+        periods: prev.periods.map(p => 
+          p.periodNumber === selectedPeriod ? { ...p, isMarked: true } : p
+        )
+      }));
+
       fetchAttendance();
     } catch (err) {
       console.error('Lỗi lưu điểm danh:', err);
@@ -118,7 +185,7 @@ const Attendance = () => {
     }
   };
 
-  // Filtered records
+  // Filtered records by search
   const filteredRecords = useMemo(() => {
     if (!searchTerm.trim()) return records;
     const term = searchTerm.toLowerCase();
@@ -151,11 +218,14 @@ const Attendance = () => {
               <UserCheck size={24} />
             </div>
             <div>
-              <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight">
-                Quản Lý & Điểm Danh Học Sinh
+              <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                Điểm Danh Theo Thời Khóa Biểu
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                  Phân Tiết Học
+                </span>
               </h1>
               <p className="text-sm text-slate-500">
-                Ghi nhận chuyên cần, vắng học và đi muộn theo lớp và buổi học
+                Tự động đồng bộ theo tiết học thực tế - Chỉ mở điểm danh khi có tiết trên thời khóa biểu
               </p>
             </div>
           </div>
@@ -171,11 +241,11 @@ const Attendance = () => {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || loading || records.length === 0}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-md shadow-blue-600/20 transition-all disabled:opacity-50"
+            disabled={saving || loading || selectedPeriod === null || records.length === 0}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-md shadow-blue-600/20 transition-all disabled:opacity-50 cursor-pointer"
           >
             <Save size={16} />
-            <span>{saving ? 'Đang lưu...' : 'Lưu Điểm Danh'}</span>
+            <span>{saving ? 'Đang lưu...' : 'Lưu Điểm Danh Tiết Này'}</span>
           </button>
         </div>
       </div>
@@ -193,7 +263,7 @@ const Attendance = () => {
       )}
 
       {/* Filter & Selector Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-white p-4 rounded-2xl shadow-xs border border-slate-100">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 bg-white p-4 rounded-2xl shadow-xs border border-slate-100">
         {/* Class Selector */}
         <div>
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -215,7 +285,7 @@ const Attendance = () => {
         {/* Date Picker */}
         <div>
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-            Ngày Điểm Danh
+            Ngày Điểm Danh ({timetableInfo.dayName || 'Hôm nay'})
           </label>
           <div className="relative">
             <input 
@@ -224,37 +294,6 @@ const Attendance = () => {
               onChange={(e) => setSelectedDate(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
             />
-          </div>
-        </div>
-
-        {/* Session Selector */}
-        <div>
-          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-            Buổi Học
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setSelectedSession('morning')}
-              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-                selectedSession === 'morning'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              ☀️ Buổi Sáng
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedSession('afternoon')}
-              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-                selectedSession === 'afternoon'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              ⛅ Buổi Chiều
-            </button>
           </div>
         </div>
 
@@ -276,15 +315,122 @@ const Attendance = () => {
         </div>
       </div>
 
+      {/* 📅 TIMETABLE PERIODS SELECTOR (Thanh chọn Tiết Học Theo TKB) */}
+      <div className="bg-white p-5 rounded-2xl shadow-xs border border-slate-100">
+        <div className="flex items-center justify-between mb-3.5">
+          <div className="flex items-center gap-2">
+            <BookOpen size={18} className="text-blue-600" />
+            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+              Lịch Học Theo Thời Khóa Biểu: {timetableInfo.dayName || 'Trong ngày'}
+            </h2>
+          </div>
+          <span className="text-xs text-slate-400">
+            {periodsLoading ? 'Đang tải TKB...' : `${timetableInfo.periods?.length || 0} tiết có lịch`}
+          </span>
+        </div>
+
+        {periodsLoading ? (
+          <div className="py-6 text-center text-slate-400 text-sm">
+            <div className="inline-block animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent mb-2"></div>
+            <div>Đang tải danh sách tiết học theo thời khóa biểu...</div>
+          </div>
+        ) : (!timetableInfo.periods || timetableInfo.periods.length === 0) ? (
+          <div className="py-8 px-4 text-center rounded-xl bg-slate-50 border border-dashed border-slate-200">
+            <CalendarX size={36} className="mx-auto text-slate-400 mb-2" />
+            <div className="font-semibold text-slate-700 text-sm">Không có tiết học nào theo thời khóa biểu</div>
+            <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+              Ngày {selectedDate} ({timetableInfo.dayName}) không có môn học nào được phân công cho lớp {currentClassName}. 
+              Chỉ những ngày có tiết học trên TKB mới được mở điểm danh.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {timetableInfo.periods.map((p) => {
+              const isSelected = selectedPeriod === p.periodNumber;
+              return (
+                <button
+                  key={p.periodNumber}
+                  type="button"
+                  onClick={() => setSelectedPeriod(p.periodNumber)}
+                  className={`p-3.5 rounded-xl text-left border transition-all relative overflow-hidden flex flex-col justify-between ${
+                    isSelected
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 ring-2 ring-blue-600/30'
+                      : 'bg-slate-50/80 hover:bg-slate-100 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className={`text-xs font-black tracking-tight ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>
+                      {p.periodName}
+                    </span>
+                    {p.isMarked ? (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                        isSelected ? 'bg-emerald-500 text-white' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        <Check size={10} /> Đã điểm
+                      </span>
+                    ) : (
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                        isSelected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        Chưa điểm
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-2.5">
+                    <div className={`text-base font-extrabold truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>
+                      {p.subjectName}
+                    </div>
+                    <div className="flex items-center justify-between mt-1 text-[11px]">
+                      <span className={`font-medium ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>
+                        GV: {p.teacherName}
+                      </span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                        p.subjectType === 'Tự chọn'
+                          ? (isSelected ? 'bg-purple-500 text-white' : 'bg-purple-100 text-purple-700')
+                          : (isSelected ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-600')
+                      }`}>
+                        {p.subjectType}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Selected Period Banner / Info */}
+        {activePeriod && (
+          <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-500">Đang chọn:</span>
+              <span className="font-extrabold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">
+                {activePeriod.periodName} - Môn {activePeriod.subjectName}
+              </span>
+              <span className="text-slate-400">|</span>
+              <span className="text-slate-600">Giáo viên: <strong>{activePeriod.teacherName}</strong></span>
+              <span className="text-slate-400">|</span>
+              <span className="text-slate-600">
+                Phạm vi: <strong>{activePeriod.subjectType === 'Tự chọn' ? 'Học sinh đăng ký môn' : 'Toàn bộ học sinh lớp'}</strong>
+              </span>
+            </div>
+            <div className="text-slate-500">
+              Sĩ số tham gia: <strong className="text-slate-800 font-bold">{records.length} học sinh</strong>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Stats KPI Overview Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
         <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500">
-            <span className="text-xs font-semibold">Sĩ Số</span>
+            <span className="text-xs font-semibold">Sĩ Số Tiết</span>
             <Users size={16} className="text-slate-400" />
           </div>
           <div className="mt-2 text-2xl font-black text-slate-800">{stats.total}</div>
-          <span className="text-[11px] text-slate-400 font-medium">Lớp {currentClassName}</span>
+          <span className="text-[11px] text-slate-400 font-medium truncate">Lớp {currentClassName}</span>
         </div>
 
         <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-100 shadow-xs flex flex-col justify-between">
@@ -293,7 +439,9 @@ const Attendance = () => {
             <CheckCircle2 size={16} className="text-emerald-500" />
           </div>
           <div className="mt-2 text-2xl font-black text-emerald-700">{stats.present}</div>
-          <span className="text-[11px] text-emerald-600 font-medium">{stats.total ? Math.round((stats.present / stats.total) * 100) : 0}% sĩ số</span>
+          <span className="text-[11px] text-emerald-600 font-medium">
+            {stats.total ? Math.round((stats.present / stats.total) * 100) : 0}% sĩ số
+          </span>
         </div>
 
         <div className="bg-amber-50/70 p-4 rounded-2xl border border-amber-100 shadow-xs flex flex-col justify-between">
@@ -302,7 +450,7 @@ const Attendance = () => {
             <Clock3 size={16} className="text-amber-500" />
           </div>
           <div className="mt-2 text-2xl font-black text-amber-700">{stats.late}</div>
-          <span className="text-[11px] text-amber-600 font-medium">Học sinh đến trễ</span>
+          <span className="text-[11px] text-amber-600 font-medium">Đến trễ</span>
         </div>
 
         <div className="bg-blue-50/70 p-4 rounded-2xl border border-blue-100 shadow-xs flex flex-col justify-between">
@@ -311,7 +459,7 @@ const Attendance = () => {
             <AlertCircle size={16} className="text-blue-500" />
           </div>
           <div className="mt-2 text-2xl font-black text-blue-700">{stats.excused}</div>
-          <span className="text-[11px] text-blue-600 font-medium">Có đơn / phụ huynh</span>
+          <span className="text-[11px] text-blue-600 font-medium">Có đơn</span>
         </div>
 
         <div className="bg-rose-50/70 p-4 rounded-2xl border border-rose-100 shadow-xs flex flex-col justify-between">
@@ -320,7 +468,7 @@ const Attendance = () => {
             <XCircle size={16} className="text-rose-500" />
           </div>
           <div className="mt-2 text-2xl font-black text-rose-700">{stats.unexcused}</div>
-          <span className="text-[11px] text-rose-600 font-medium">Chưa rõ lý do</span>
+          <span className="text-[11px] text-rose-600 font-medium">Không phép</span>
         </div>
 
         <div className="bg-indigo-50/70 p-4 rounded-2xl border border-indigo-100 shadow-xs flex flex-col justify-between">
@@ -329,7 +477,7 @@ const Attendance = () => {
             <Sparkles size={16} className="text-indigo-500" />
           </div>
           <div className="mt-2 text-2xl font-black text-indigo-700">{stats.rate}%</div>
-          <span className="text-[11px] text-indigo-600 font-medium">Độ hoàn thành</span>
+          <span className="text-[11px] text-indigo-600 font-medium">Tỷ lệ tiết này</span>
         </div>
       </div>
 
@@ -341,14 +489,16 @@ const Attendance = () => {
           </span>
           <button
             onClick={() => handleMarkAll('present')}
-            className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+            disabled={records.length === 0}
+            className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
             <CheckCircle2 size={14} />
             Tất cả Có mặt
           </button>
           <button
             onClick={() => handleMarkAll('excused')}
-            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+            disabled={records.length === 0}
+            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
             <AlertCircle size={14} />
             Tất cả Nghỉ phép
@@ -358,7 +508,8 @@ const Attendance = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={fetchAttendance}
-            className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1"
+            disabled={loading || selectedPeriod === null}
+            className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-lg transition-colors text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
             title="Làm mới dữ liệu"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -372,13 +523,23 @@ const Attendance = () => {
         {loading ? (
           <div className="py-20 text-center">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent mb-3"></div>
-            <p className="text-sm font-semibold text-slate-500">Đang tải danh sách học sinh...</p>
+            <p className="text-sm font-semibold text-slate-500">Đang tải danh sách học sinh theo tiết học...</p>
+          </div>
+        ) : selectedPeriod === null ? (
+          <div className="py-16 text-center text-slate-400">
+            <BookOpen size={48} className="mx-auto text-slate-300 mb-3" />
+            <p className="font-semibold text-slate-600">Vui lòng chọn một tiết học phía trên để tiến hành điểm danh</p>
+            <p className="text-xs text-slate-400 mt-1">Hệ thống chỉ hiển thị học sinh có lịch học trong tiết này</p>
           </div>
         ) : filteredRecords.length === 0 ? (
           <div className="py-16 text-center text-slate-400">
             <Users size={48} className="mx-auto text-slate-300 mb-3" />
-            <p className="font-semibold text-slate-600">Không tìm thấy học sinh nào</p>
-            <p className="text-xs text-slate-400 mt-1">Vui lòng kiểm tra lại lớp học hoặc bộ lọc tìm kiếm</p>
+            <p className="font-semibold text-slate-600">Không tìm thấy học sinh nào trong tiết học này</p>
+            <p className="text-xs text-slate-400 mt-1">
+              {activePeriod?.subjectType === 'Tự chọn'
+                ? 'Môn tự chọn này hiện chưa có học sinh nào đăng ký tham gia.'
+                : 'Vui lòng kiểm tra lại danh sách học sinh của lớp.'}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -412,7 +573,7 @@ const Attendance = () => {
                         <button
                           type="button"
                           onClick={() => handleStatusChange(student.studentId, 'present')}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                             student.status === 'present'
                               ? 'bg-emerald-600 text-white shadow-xs'
                               : 'bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700'
@@ -426,7 +587,7 @@ const Attendance = () => {
                         <button
                           type="button"
                           onClick={() => handleStatusChange(student.studentId, 'late')}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                             student.status === 'late'
                               ? 'bg-amber-500 text-white shadow-xs'
                               : 'bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-700'
@@ -440,7 +601,7 @@ const Attendance = () => {
                         <button
                           type="button"
                           onClick={() => handleStatusChange(student.studentId, 'excused')}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                             student.status === 'excused'
                               ? 'bg-blue-600 text-white shadow-xs'
                               : 'bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-700'
@@ -454,7 +615,7 @@ const Attendance = () => {
                         <button
                           type="button"
                           onClick={() => handleStatusChange(student.studentId, 'unexcused')}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                             student.status === 'unexcused'
                               ? 'bg-rose-600 text-white shadow-xs'
                               : 'bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-700'
@@ -471,20 +632,17 @@ const Attendance = () => {
                         placeholder="Thêm ghi chú..."
                         value={student.note || ''}
                         onChange={(e) => handleNoteChange(student.studentId, e.target.value)}
-                        className="w-full text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-transparent focus:border-blue-400 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none transition-colors"
                       />
                     </td>
-                    <td className="py-3.5 px-4 text-xs text-slate-500">
-                      {student.parentPhone ? (
-                        <a 
-                          href={`tel:${student.parentPhone}`}
-                          className="inline-flex items-center gap-1 text-slate-600 hover:text-blue-600 font-mono font-medium"
-                        >
-                          <Phone size={12} />
-                          {student.parentPhone}
-                        </a>
+                    <td className="py-3.5 px-4 text-xs font-medium text-slate-500">
+                      {student.parentPhone || student.phone ? (
+                        <div className="flex items-center gap-1.5 text-slate-600">
+                          <Phone size={12} className="text-slate-400" />
+                          <span>{student.parentPhone || student.phone}</span>
+                        </div>
                       ) : (
-                        <span className="text-slate-300">-</span>
+                        <span className="text-slate-300 italic">Chưa có SĐT</span>
                       )}
                     </td>
                   </tr>
