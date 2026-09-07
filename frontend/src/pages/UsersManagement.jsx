@@ -389,27 +389,40 @@ const UsersManagement = () => {
 
     const handleSetStatus = async (user, newStatus) => {
         const statusMap = {
-            active: { text: 'Mở hoạt động', color: '#10b981' },
-            suspended: { text: 'Đình chỉ tạm thời', color: '#f59e0b' },
-            blocked: { text: 'Khóa hoàn toàn', color: '#ef4444' }
+            active: { text: 'Mở hoạt động / Kích hoạt', color: '#10b981' },
+            suspended: { text: 'Đình chỉ hoạt động', color: '#f59e0b' },
+            blocked: { text: 'Khóa hoàn toàn tài khoản', color: '#ef4444' }
         };
 
         const target = statusMap[newStatus] || { text: newStatus, color: '#6366f1' };
 
-        const result = await Swal.fire({
-            title: `Đổi trạng thái: ${target.text}?`,
-            text: `Bạn có chắc muốn chuyển tài khoản ${user.username} sang trạng thái "${target.text}"?`,
-            icon: 'warning',
+        const { value: reason } = await Swal.fire({
+            title: `Xác nhận ${target.text}?`,
+            text: `Bạn có chắc muốn chuyển tài khoản ${user.username} (${user.profile?.fullName || user.role}) sang trạng thái "${target.text}"?`,
+            input: 'textarea',
+            inputLabel: 'Lý do thực hiện (Audit Log):',
+            inputPlaceholder: newStatus === 'active' 
+                ? 'Nhập lý do kích hoạt lại tài khoản...' 
+                : 'Nhập lý do khóa / đình chỉ (VD: Vi phạm nội quy, học sinh tạm nghỉ học, nghỉ công tác...)',
+            inputValidator: (val) => {
+                if (newStatus !== 'active' && (!val || !val.trim())) {
+                    return 'Vui lòng nhập lý do để ghi nhận vào hệ thống kiểm toán!';
+                }
+            },
+            icon: newStatus === 'active' ? 'question' : 'warning',
             showCancelButton: true,
             confirmButtonColor: target.color,
-            cancelButtonText: 'Hủy',
-            confirmButtonText: 'Xác nhận'
+            cancelButtonText: 'Hủy bỏ',
+            confirmButtonText: 'Xác nhận thực hiện'
         });
 
-        if (result.isConfirmed) {
+        if (reason !== undefined) {
             try {
-                await api.patch(`/users/${user.id}/status`, { status: newStatus });
-                Swal.fire('Thành công', `Đã chuyển tài khoản sang: ${target.text}`, 'success');
+                const res = await api.patch(`/users/${user.id}/status`, { 
+                    status: newStatus,
+                    reason: reason ? reason.trim() : 'Thay đổi trạng thái tài khoản'
+                });
+                Swal.fire('Thành công', res.data?.message || `Đã chuyển tài khoản sang: ${target.text}`, 'success');
                 fetchUsers();
             } catch (error) {
                 Swal.fire('Lỗi', error.response?.data?.message || 'Không thể đổi trạng thái', 'error');

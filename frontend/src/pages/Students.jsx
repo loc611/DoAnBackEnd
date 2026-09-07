@@ -8,6 +8,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import Swal from 'sweetalert2';
+import StudentImportModal from '../components/StudentImportModal';
 import { generateStudentCode } from '../utils/codeGenerator';
 import { isValidPhoneNumber, sanitizePhoneNumber, PHONE_ERROR_MESSAGES } from '../utils/phoneValidation';
 
@@ -116,8 +117,18 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Mã học sinh (Tự động) *</label>
-              <input type="text" name="studentCode" value={formData.studentCode} readOnly required className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-100 font-mono font-semibold text-blue-600 outline-none cursor-not-allowed" />
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Mã học sinh <span className="text-xs text-indigo-600 font-bold">(Bất biến)</span> *
+              </label>
+              <input 
+                type="text" 
+                name="studentCode" 
+                value={formData.studentCode} 
+                readOnly 
+                required 
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-100 font-mono font-bold text-indigo-600 outline-none cursor-not-allowed text-sm" 
+              />
+              <span className="text-[11px] text-slate-400 mt-1 block">Mã định danh học sinh duy nhất và không thể thay đổi sau khi cấp</span>
             </div>
 
             <div>
@@ -544,16 +555,50 @@ const Students = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [loading, setLoading] = useState(true);
   
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  
   // Google Sheets state
   const [webhookUrl, setWebhookUrl] = useState(() => 
     localStorage.getItem('google_sheet_webhook_url') || 'https://script.google.com/macros/s/AKfycbxGfcWXmnD0-pKDZiC8NbOQn0v_9fsfIw18iaFgv0PpUE8Pt0myFUGVNhswWnxXmNQ49A/exec'
   );
   const [isSyncing, setIsSyncing] = useState(false);
-
   const [isExporting, setIsExporting] = useState(false);
 
   const navigate = useNavigate();
   const userRole = localStorage.getItem('userRole') || 'student';
+
+  const handleExportExcel = () => {
+    try {
+      const exportList = filteredStudents.length > 0 ? filteredStudents : students;
+      if (exportList.length === 0) {
+        Swal.fire('Thông báo', 'Không có học sinh nào để xuất', 'info');
+        return;
+      }
+
+      const headers = 'STT,Mã Học Sinh,Họ và Tên,Giới Tính,Ngày Sinh,Lớp,SĐT Cá Nhân,Tên Phụ Huynh,SĐT Phụ Huynh,Trạng Thái\n';
+      const rows = exportList.map((s, idx) => {
+        const dob = s.dateOfBirth ? new Date(s.dateOfBirth).toLocaleDateString('vi-VN') : '';
+        const className = s.class?.className || 'Chưa xếp lớp';
+        const status = s.user?.status === 'blocked' ? 'Đã khóa' : (s.user?.status === 'suspended' ? 'Đình chỉ' : 'Hoạt động');
+        return `"${idx + 1}","${s.studentCode || ''}","${s.fullName || ''}","${s.gender || 'Nam'}","${dob}","${className}","${s.phone || ''}","${s.parentName || ''}","${s.parentPhone || ''}","${status}"`;
+      }).join('\n');
+
+      const csvContent = '\uFEFF' + headers + rows;
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Danh_Sach_Hoc_Sinh_THPT_TTLN_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      Swal.fire('Thành công', `Đã xuất ${exportList.length} học sinh ra file CSV/Excel thành công!`, 'success');
+    } catch (err) {
+      console.error('Export error:', err);
+      Swal.fire('Lỗi', 'Không thể xuất danh sách học sinh', 'error');
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -717,37 +762,57 @@ const Students = () => {
 
         {userRole === 'admin' && (
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Excel / CSV Batch Import */}
+            <button 
+              onClick={() => setIsImportModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold text-sm transition-all border border-indigo-200 shadow-sm cursor-pointer"
+              title="Nhập danh sách học sinh từ file Excel / CSV có xem trước"
+            >
+              <FileSpreadsheet size={16} className="text-indigo-600" />
+              <span>Nhập Excel</span>
+            </button>
+
+            {/* Excel Direct Export */}
+            <button 
+              onClick={handleExportExcel}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold text-sm transition-all border border-emerald-200 shadow-sm cursor-pointer"
+              title="Xuất danh sách học sinh hiện tại ra file Excel / CSV"
+            >
+              <Download size={16} className="text-emerald-600" />
+              <span>Xuất Excel</span>
+            </button>
+
             {/* Google Sheets Actions */}
             <button 
               onClick={handleSyncFromSheets}
               disabled={isSyncing}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold text-sm transition-all border border-emerald-200 shadow-sm"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold text-sm transition-all border border-slate-200 shadow-sm"
               title="Kéo danh sách học sinh từ Google Sheet về hệ thống"
             >
-              {isSyncing ? <RefreshCw size={16} className="animate-spin text-emerald-600" /> : <Download size={16} />}
-              <span>Đồng bộ từ Sheet</span>
+              {isSyncing ? <RefreshCw size={16} className="animate-spin text-slate-600" /> : <Download size={16} />}
+              <span>Đồng bộ Sheet</span>
             </button>
 
             <button 
               onClick={handleExportToSheets}
               disabled={isExporting}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold text-sm transition-all border border-blue-200 shadow-sm"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold text-sm transition-all border border-slate-200 shadow-sm"
               title="Ghi toàn bộ học sinh lên Google Sheet"
             >
-              {isExporting ? <RefreshCw size={16} className="animate-spin text-blue-600" /> : <Upload size={16} />}
-              <span>Xuất ra Sheet</span>
+              {isExporting ? <RefreshCw size={16} className="animate-spin text-slate-600" /> : <Upload size={16} />}
+              <span>Xuất Sheet</span>
             </button>
 
             <button 
               onClick={() => setIsSheetModalOpen(true)}
-              className="p-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+              className="p-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors cursor-pointer"
               title="Cài đặt kết nối Google Sheet & Xem mã Apps Script"
             >
               <Settings size={18} />
             </button>
 
             {/* Standard Add Student Button */}
-            <button onClick={handleAdd} className="btn-primary flex items-center gap-2 px-4 py-2.5 text-sm">
+            <button onClick={handleAdd} className="btn-primary flex items-center gap-2 px-4 py-2.5 text-sm cursor-pointer">
               <Plus size={18} />
               Thêm Học sinh
             </button>
@@ -902,6 +967,17 @@ const Students = () => {
             onExport={handleExportToSheets}
             isSyncing={isSyncing}
             isExporting={isExporting}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isImportModalOpen && (
+          <StudentImportModal 
+            isOpen={isImportModalOpen} 
+            onClose={() => setIsImportModalOpen(false)} 
+            classesList={classesList} 
+            onSuccess={fetchData} 
           />
         )}
       </AnimatePresence>

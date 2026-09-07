@@ -2,17 +2,17 @@ import prisma from '../prismaClient.js';
 import bcrypt from 'bcryptjs';
 
 const DEFAULT_TEACHERS = [
-    { username: 'gv001', email: 'gv001@school.edu.vn', teacherCode: 'GV001', fullName: 'Nguyễn Văn Giáo Viên', phone: '0977777771', specialization: 'Toán Học' },
-    { username: 'gv002', email: 'gv002@school.edu.vn', teacherCode: 'GV002', fullName: 'Trần Thị Mai', phone: '0977777772', specialization: 'Ngữ Văn' },
-    { username: 'gv003', email: 'gv003@school.edu.vn', teacherCode: 'GV003', fullName: 'Lê Hoàng Anh', phone: '0977777773', specialization: 'Tiếng Anh' },
-    { username: 'gv004', email: 'gv004@school.edu.vn', teacherCode: 'GV004', fullName: 'Phạm Minh Đức', phone: '0977777774', specialization: 'Vật Lý' },
-    { username: 'gv005', email: 'gv005@school.edu.vn', teacherCode: 'GV005', fullName: 'Hoàng Thu Trang', phone: '0977777775', specialization: 'Hóa Học' },
-    { username: 'gv006', email: 'gv006@school.edu.vn', teacherCode: 'GV006', fullName: 'Vũ Thị Lan', phone: '0977777776', specialization: 'Sinh Học' },
-    { username: 'gv007', email: 'gv007@school.edu.vn', teacherCode: 'GV007', fullName: 'Đỗ Thành Nam', phone: '0977777777', specialization: 'Lịch Sử' },
-    { username: 'gv008', email: 'gv008@school.edu.vn', teacherCode: 'GV008', fullName: 'Bùi Thị Cúc', phone: '0977777778', specialization: 'Địa Lý' },
-    { username: 'gv009', email: 'gv009@school.edu.vn', teacherCode: 'GV009', fullName: 'Ngô Quang Huy', phone: '0977777779', specialization: 'Tin Học' },
-    { username: 'gv010', email: 'gv010@school.edu.vn', teacherCode: 'GV010', fullName: 'Nguyễn Thị Hằng', phone: '0977777780', specialization: 'Giáo Dục Công Dân' },
-    { username: 'gv011', email: 'gv011@school.edu.vn', teacherCode: 'GV011', fullName: 'Đinh Quốc Bảo', phone: '0977777781', specialization: 'Giáo Dục Thể Chất' }
+    { username: 'gv001', email: 'gv001@school.edu.vn', teacherCode: 'GV001', fullName: 'ThS. Nguyễn Văn Quản Khoa', phone: '0977777771', specialization: 'Toán Học', position: 'Trưởng khoa / Quản khoa' },
+    { username: 'gv002', email: 'gv002@school.edu.vn', teacherCode: 'GV002', fullName: 'Trần Thị Mai', phone: '0977777772', specialization: 'Ngữ Văn', position: 'Trưởng bộ môn' },
+    { username: 'gv003', email: 'gv003@school.edu.vn', teacherCode: 'GV003', fullName: 'Lê Hoàng Anh', phone: '0977777773', specialization: 'Tiếng Anh', position: 'Giáo viên chủ nhiệm' },
+    { username: 'gv004', email: 'gv004@school.edu.vn', teacherCode: 'GV004', fullName: 'Phạm Minh Đức', phone: '0977777774', specialization: 'Vật Lý', position: 'Giáo viên chủ nhiệm' },
+    { username: 'gv005', email: 'gv005@school.edu.vn', teacherCode: 'GV005', fullName: 'Hoàng Thu Trang', phone: '0977777775', specialization: 'Hóa Học', position: 'Giáo viên chủ nhiệm' },
+    { username: 'gv006', email: 'gv006@school.edu.vn', teacherCode: 'GV006', fullName: 'Vũ Thị Lan', phone: '0977777776', specialization: 'Sinh Học', position: 'Giáo viên chủ nhiệm' },
+    { username: 'gv007', email: 'gv007@school.edu.vn', teacherCode: 'GV007', fullName: 'Đỗ Thành Nam', phone: '0977777777', specialization: 'Lịch Sử', position: 'Giáo viên bộ môn' },
+    { username: 'gv008', email: 'gv008@school.edu.vn', teacherCode: 'GV008', fullName: 'Bùi Thị Cúc', phone: '0977777778', specialization: 'Địa Lý', position: 'Giáo viên bộ môn' },
+    { username: 'gv009', email: 'gv009@school.edu.vn', teacherCode: 'GV009', fullName: 'Ngô Quang Huy', phone: '0977777779', specialization: 'Tin Học', position: 'Giáo viên bộ môn' },
+    { username: 'gv010', email: 'gv010@school.edu.vn', teacherCode: 'GV010', fullName: 'Nguyễn Thị Hằng', phone: '0977777780', specialization: 'Giáo Dục Công Dân', position: 'Giáo viên bộ môn' },
+    { username: 'gv011', email: 'gv011@school.edu.vn', teacherCode: 'GV011', fullName: 'Đinh Quốc Bảo', phone: '0977777781', specialization: 'Giáo Dục Thể Chất', position: 'Giáo viên bộ môn' }
 ];
 
 const DEFAULT_SUBJECTS = [
@@ -113,9 +113,7 @@ export const initDefaultUsers = async () => {
                 where: {
                     OR: [
                         { teacherCode: teacherData.teacherCode },
-                        { user: { username: teacherData.username } },
-                        { user: { email: teacherData.email } },
-                        { phone: teacherData.phone }
+                        { user: { username: teacherData.username } }
                     ]
                 },
                 include: { user: true }
@@ -148,7 +146,8 @@ export const initDefaultUsers = async () => {
                                 teacherCode: teacherData.teacherCode,
                                 fullName: teacherData.fullName,
                                 phone: teacherData.phone,
-                                specialization: teacherData.specialization
+                                specialization: teacherData.specialization,
+                                position: teacherData.position || 'Giáo viên bộ môn'
                             }
                         });
                         if (teacherRole) {
@@ -157,15 +156,27 @@ export const initDefaultUsers = async () => {
                             });
                         }
                     });
-                    console.log(`✅ Default Teacher created: ${teacherData.teacherCode} - ${teacherData.fullName}`);
+                    console.log(`✅ Default Teacher created: ${teacherData.teacherCode} - ${teacherData.fullName} (${teacherData.position})`);
                 }
             } else if (existingTeacher.user) {
                 await prisma.user.update({
                     where: { id: existingTeacher.user.id },
                     data: {
+                        username: teacherData.username,
+                        email: teacherData.email,
                         password: teacherPassHash,
                         role: 'teacher',
                         status: 'active'
+                    }
+                });
+                await prisma.teacher.update({
+                    where: { id: existingTeacher.id },
+                    data: {
+                        teacherCode: teacherData.teacherCode,
+                        fullName: teacherData.fullName,
+                        phone: teacherData.phone,
+                        specialization: teacherData.specialization,
+                        position: teacherData.position || 'Giáo viên bộ môn'
                     }
                 });
                 if (teacherRole) {
