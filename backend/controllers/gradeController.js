@@ -148,6 +148,66 @@ export const updateClassGrades = async (req, res) => {
     }
 };
 
+export const unlockClassGrades = async (req, res) => {
+    try {
+        const { classId } = req.params;
+        const { semester = 'HK1_2026', reason } = req.body;
+
+        // Chỉ Admin, Ban Giám Hiệu, hoặc Quản Khoa mới có quyền mở khóa bảng điểm
+        const user = await prisma.user.findUnique({
+            where: { id: req.user.id },
+            include: { teacher: true, admin: true }
+        });
+
+        const isAdmin = user?.role === 'admin' || !!user?.admin;
+        const isManagement = user?.teacher?.position === 'Trưởng khoa / Quản khoa' || 
+                             user?.teacher?.position === 'Ban giám hiệu';
+
+        if (!isAdmin && !isManagement) {
+            return res.status(403).json({ 
+                message: 'Chỉ Ban Giám Hiệu, Quản Khoa hoặc Quản trị viên mới có quyền mở khóa bảng điểm đã niêm phong' 
+            });
+        }
+
+        if (!reason || !reason.trim()) {
+            return res.status(400).json({ 
+                message: 'Vui lòng cung cấp lý do mở khóa bảng điểm để ghi nhật ký kiểm toán (Audit Log)' 
+            });
+        }
+
+        await prisma.grade.updateMany({
+            where: {
+                classId: classId,
+                semester: semester
+            },
+            data: {
+                status: 'draft'
+            }
+        });
+
+        // Ghi vết kiểm toán (Audit Logging)
+        await AuditLogService.log({
+            userId: req.user.id,
+            action: 'GRADE_UNLOCK',
+            module: 'grade',
+            resource: 'Grade',
+            resourceId: classId,
+            newData: { classId, semester, status: 'draft' },
+            reason: reason.trim(),
+            req,
+            severity: 'critical'
+        });
+
+        res.json({
+            message: 'Đã mở khóa bảng điểm thành công. Giáo viên có thể chỉnh sửa lại điểm số.',
+            status: 'draft'
+        });
+    } catch (error) {
+        console.error('Error unlocking grades:', error);
+        res.status(500).json({ message: 'Lỗi server khi mở khóa bảng điểm' });
+    }
+};
+
 export const getMyGrades = async (req, res) => {
     try {
         const student = await prisma.student.findUnique({
@@ -165,12 +225,36 @@ export const getMyGrades = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy hồ sơ học sinh' });
         }
 
-        const grades = await prisma.grade.findMany({
+        const rawGrades = await prisma.grade.findMany({
             where: { studentId: student.id },
             include: {
                 class: true
             },
             orderBy: { semester: 'asc' }
+        });
+
+        // Chỉ công bố điểm số thực tế khi status === 'locked' (Đã khóa & công bố)
+        // Nếu status === 'draft', học sinh thấy thông báo chờ công bố
+        const grades = rawGrades.map(g => {
+            const isLocked = g.status === 'locked';
+            return {
+                id: g.id,
+                studentId: g.studentId,
+                classId: g.classId,
+                semester: g.semester,
+                status: g.status,
+                isLocked: isLocked,
+                math: isLocked ? g.math : null,
+                literature: isLocked ? g.literature : null,
+                english: isLocked ? g.english : null,
+                physics: isLocked ? g.physics : null,
+                chemistry: isLocked ? g.chemistry : null,
+                it: isLocked ? g.it : null,
+                conductScore: g.conductScore,
+                createdAt: g.createdAt,
+                updatedAt: g.updatedAt,
+                class: g.class
+            };
         });
 
         res.json({ student, grades });

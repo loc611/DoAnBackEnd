@@ -191,6 +191,14 @@ const DashboardLayout = () => {
           { icon: Users, label: 'Tra Cứu Học Sinh', path: '/students' },
         ]
       },
+      ...(userData?.position === 'Trưởng khoa / Quản khoa' || userData?.position === 'Ban giám hiệu' ? [
+        {
+          title: 'QUẢN TRỊ KHOA / ĐƠN VỊ',
+          items: [
+            { icon: Shield, label: 'Quản Trị Tài Khoản (Khóa/Đình chỉ)', path: '/users', badge: 'Quản Khoa' },
+          ]
+        }
+      ] : []),
       {
         title: 'CÁ NHÂN',
         items: [

@@ -286,24 +286,44 @@ const Teachers = () => {
     }
   };
 
+  const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+  const isManagementUser = userRole === 'admin' || 
+                           userData?.position === 'Trưởng khoa / Quản khoa' || 
+                           userData?.position === 'Ban giám hiệu';
+
   const handleToggleStatus = async (teacher) => {
+    if (!isManagementUser) {
+      return Swal.fire('Không có quyền', 'Chỉ Quản trị viên hoặc Quản Khoa mới có quyền thực hiện.', 'warning');
+    }
+
     const isCurrentActive = teacher.status === 'active';
     const newStatus = isCurrentActive ? 'blocked' : 'active';
     const actionText = isCurrentActive ? 'Khóa' : 'Mở khóa';
     
-    const result = await Swal.fire({
+    const { value: reason } = await Swal.fire({
       title: `${actionText} tài khoản?`,
-      text: `Bạn có chắc chắn muốn ${actionText.toLowerCase()} quyền truy cập của giáo viên này?`,
+      text: `Bạn có chắc chắn muốn ${actionText.toLowerCase()} quyền truy cập của giáo viên ${teacher.profile?.fullName || teacher.username}?`,
+      input: 'textarea',
+      inputLabel: 'Lý do thực hiện (Ghi vào Audit Log):',
+      inputPlaceholder: `Nhập lý do ${actionText.toLowerCase()} tài khoản giáo viên...`,
+      inputValidator: (val) => {
+        if (newStatus !== 'active' && (!val || !val.trim())) {
+          return 'Vui lòng nhập lý do để ghi nhận vào hệ thống!';
+        }
+      },
       icon: isCurrentActive ? 'warning' : 'question',
       showCancelButton: true,
       confirmButtonColor: isCurrentActive ? '#d33' : '#10b981',
-      cancelButtonText: 'Hủy',
+      cancelButtonText: 'Hủy bỏ',
       confirmButtonText: 'Xác nhận'
     });
 
-    if (result.isConfirmed) {
+    if (reason !== undefined) {
       try {
-        await api.patch(`/users/${teacher.id}/status`, { status: newStatus });
+        await api.patch(`/users/${teacher.id}/status`, { 
+          status: newStatus,
+          reason: reason ? reason.trim() : `${actionText} tài khoản giáo viên`
+        });
         Swal.fire('Thành công', `Đã ${actionText.toLowerCase()} tài khoản thành công`, 'success');
         fetchTeachers();
       } catch (err) {
@@ -491,7 +511,7 @@ const Teachers = () => {
                       {/* Thao tác */}
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end items-center space-x-1.5">
-                          {userRole === 'admin' ? (
+                          {isManagementUser ? (
                             <>
                               <button 
                                 onClick={() => handleToggleStatus(teacher)} 
@@ -504,20 +524,24 @@ const Teachers = () => {
                               >
                                 {isActive ? <Lock size={15} /> : <Unlock size={15} />}
                               </button>
-                              <button 
-                                onClick={() => handleEdit(teacher)} 
-                                className="w-8 h-8 rounded-xl flex items-center justify-center bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-105 transition-all cursor-pointer" 
-                                title="Sửa thông tin"
-                              >
-                                <Edit size={15} />
-                              </button>
-                              <button 
-                                onClick={() => handleDelete(teacher.id)} 
-                                className="w-8 h-8 rounded-xl flex items-center justify-center bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-105 transition-all cursor-pointer" 
-                                title="Xóa giáo viên"
-                              >
-                                <Trash2 size={15} />
-                              </button>
+                              {userRole === 'admin' && (
+                                <>
+                                  <button 
+                                    onClick={() => handleEdit(teacher)} 
+                                    className="w-8 h-8 rounded-xl flex items-center justify-center bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-105 transition-all cursor-pointer" 
+                                    title="Sửa thông tin"
+                                  >
+                                    <Edit size={15} />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDelete(teacher.id)} 
+                                    className="w-8 h-8 rounded-xl flex items-center justify-center bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-105 transition-all cursor-pointer" 
+                                    title="Xóa giáo viên"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </>
+                              )}
                             </>
                           ) : (
                             <span className="text-slate-400 text-xs italic">Chỉ xem</span>

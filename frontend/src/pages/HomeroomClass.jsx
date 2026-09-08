@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Phone, Mail, Award, Search, Filter, BookOpen, AlertCircle, CheckCircle, ArrowRight, UserPlus, UserMinus, X, Sparkles, GraduationCap } from 'lucide-react';
+import { Users, Phone, Mail, Award, Search, Filter, BookOpen, AlertCircle, CheckCircle, ArrowRight, UserPlus, UserMinus, X, Sparkles, GraduationCap, Download, Printer, FileSpreadsheet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import Swal from 'sweetalert2';
+import StudentGradeReportCardModal from '../components/StudentGradeReportCardModal';
 
 const AddStudentModal = ({ isOpen, onClose, classId, onSuccess }) => {
   const [students, setStudents] = useState([]);
@@ -186,6 +187,11 @@ const HomeroomClass = () => {
     femaleCount: 0
   });
 
+  const [isReportCardOpen, setIsReportCardOpen] = useState(false);
+  const [classGrades, setClassGrades] = useState([]);
+  const [selectedStudentForReport, setSelectedStudentForReport] = useState(null);
+  const [loadingGrades, setLoadingGrades] = useState(false);
+
   const userData = JSON.parse(localStorage.getItem('userData') || '{}');
 
   useEffect(() => {
@@ -239,6 +245,93 @@ const HomeroomClass = () => {
       console.error('Failed to get students for homeroom class', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExportStudentsList = () => {
+    if (students.length === 0) {
+      Swal.fire('Thông báo', 'Không có học sinh trong danh sách để xuất', 'info');
+      return;
+    }
+    const headers = 'STT,Mã Học Sinh,Họ và Tên,Giới Tính,Ngày Sinh,Số Điện Thoại,Họ Tên Phụ Huynh,SĐT Phụ Huynh,Địa Chỉ,Lớp\n';
+    const rows = students.map((s, idx) => {
+      const dobFormatted = s.dob ? new Date(s.dob).toLocaleDateString('vi-VN') : '';
+      return `"${idx + 1}","${s.studentCode || s.id}","${s.fullName || ''}","${s.gender || 'Nam'}","${dobFormatted}","${s.phone || ''}","${s.parentName || ''}","${s.parentPhone || ''}","${s.address || ''}","${homeroomClass?.className || ''}"`;
+    }).join('\n');
+
+    const csvContent = '\uFEFF' + headers + rows;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Danh_Sach_Hoc_Sinh_Lop_${homeroomClass?.className || 'CN'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    Swal.fire('Thành công', `Đã xuất danh sách ${students.length} học sinh lớp ${homeroomClass?.className} ra file Excel!`, 'success');
+  };
+
+  const handleOpenClassReport = async (student = null) => {
+    if (!homeroomClass) return;
+    try {
+      setLoadingGrades(true);
+      const res = await api.get(`/grades/class/${homeroomClass.id}?semester=HK1_2026`);
+      const list = Array.isArray(res.data) ? res.data : (res.data?.students || []);
+      const formatted = list.map(item => {
+        const math = item.scores?.math ?? 0;
+        const lit = item.scores?.literature ?? 0;
+        const eng = item.scores?.english ?? 0;
+        const phy = item.scores?.physics ?? 0;
+        const chem = item.scores?.chemistry ?? 0;
+        const it = item.scores?.it ?? 0;
+        const avg = ((math + lit + eng + phy + chem + it) / 6).toFixed(2);
+        return {
+          id: item.id,
+          studentId: item.studentId,
+          studentCode: item.studentCode || item.id,
+          name: item.name,
+          dob: item.dob,
+          gender: item.gender,
+          math,
+          literature: lit,
+          english: eng,
+          physics: phy,
+          chemistry: chem,
+          it,
+          average: avg,
+          rank: avg >= 8.0 ? 'Giỏi' : avg >= 6.5 ? 'Khá' : avg >= 5.0 ? 'Trung bình' : 'Yếu',
+          status: item.status || 'draft'
+        };
+      });
+
+      setClassGrades(formatted);
+      if (student) {
+        const found = formatted.find(s => s.studentCode === student.studentCode || s.id === student.id || s.studentId === student.id);
+        setSelectedStudentForReport(found || {
+          studentCode: student.studentCode,
+          name: student.fullName,
+          gender: student.gender,
+          dob: student.dob,
+          math: 0,
+          literature: 0,
+          english: 0,
+          physics: 0,
+          chemistry: 0,
+          it: 0,
+          average: '0.00',
+          rank: 'Chưa có điểm',
+          status: 'draft'
+        });
+      } else {
+        setSelectedStudentForReport(null);
+      }
+      setIsReportCardOpen(true);
+    } catch (err) {
+      console.error(err);
+      Swal.fire('Lỗi', 'Không thể tải bảng điểm cho lớp này', 'error');
+    } finally {
+      setLoadingGrades(false);
     }
   };
 
@@ -338,8 +431,8 @@ const HomeroomClass = () => {
       {/* Main Roster Card */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
         {/* Controls Toolbar */}
-        <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row gap-4 items-center justify-between bg-slate-50/50">
-          <div className="relative w-full sm:w-80">
+        <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row gap-4 items-center justify-between bg-slate-50/50">
+          <div className="relative w-full lg:w-80">
             <Search size={18} className="text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -350,18 +443,36 @@ const HomeroomClass = () => {
             />
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto justify-end">
+            <button
+              onClick={handleExportStudentsList}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold rounded-xl text-xs sm:text-sm transition-all cursor-pointer shadow-xs"
+              title="Xuất danh sách học sinh ra file Excel (.csv chuẩn UTF-8)"
+            >
+              <Download size={16} className="text-emerald-600" /> Xuất Excel Lớp
+            </button>
+
+            <button
+              onClick={() => handleOpenClassReport(null)}
+              disabled={loadingGrades}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 font-bold rounded-xl text-xs sm:text-sm transition-all cursor-pointer shadow-xs"
+              title="In phiếu báo điểm / học bạ cho lớp chủ nhiệm"
+            >
+              <Printer size={16} className="text-blue-600" /> {loadingGrades ? 'Đang tải...' : 'In Phiếu Điểm Cả Lớp'}
+            </button>
+
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
             >
-              <UserPlus size={16} /> Thêm học sinh vào lớp
+              <UserPlus size={16} /> Thêm HS
             </button>
+
             <Link
               to="/grades"
-              className="flex items-center gap-2 px-4 py-2.5 bg-white text-emerald-700 hover:bg-emerald-50 font-bold rounded-xl text-sm transition-colors border border-emerald-200"
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-white text-emerald-700 hover:bg-emerald-50 font-bold rounded-xl text-xs sm:text-sm transition-colors border border-emerald-200"
             >
-              <BookOpen size={16} /> Sổ điểm lớp
+              <BookOpen size={16} /> Sổ điểm
             </Link>
           </div>
         </div>
@@ -425,6 +536,13 @@ const HomeroomClass = () => {
                         Hồ sơ
                       </Link>
                       <button
+                        onClick={() => handleOpenClassReport(student)}
+                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                        title={`In phiếu báo điểm cho ${student.fullName}`}
+                      >
+                        <Printer size={16} />
+                      </button>
+                      <button
                         onClick={() => handleRemoveStudent(student)}
                         className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                         title="Xóa học sinh khỏi lớp chủ nhiệm"
@@ -458,6 +576,22 @@ const HomeroomClass = () => {
           />
         )}
       </AnimatePresence>
+
+      {/* Printable Report Card Modal */}
+      {homeroomClass && (
+        <StudentGradeReportCardModal
+          isOpen={isReportCardOpen}
+          onClose={() => setIsReportCardOpen(false)}
+          studentData={selectedStudentForReport}
+          classData={{
+            className: homeroomClass.className,
+            grade: homeroomClass.grade,
+            homeroomTeacherName: userData.name || 'ThS. Nguyễn Văn Quản Khoa'
+          }}
+          studentsList={classGrades}
+          semester="HK1_2026"
+        />
+      )}
     </div>
   );
 };

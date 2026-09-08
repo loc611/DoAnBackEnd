@@ -222,19 +222,8 @@ export const updateStudent = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy học sinh' });
         }
 
-        // Validate mã học sinh nếu có thay đổi
-        if (studentCode !== undefined && studentCode.trim()) {
-            studentCode = studentCode.trim().toUpperCase();
-            if (!isValidStudentCode(studentCode)) {
-                return res.status(400).json({ 
-                    message: 'Mã học sinh không đúng định dạng (phải bắt đầu bằng HS và theo sau là các chữ số, VD: HS123456)' 
-                });
-            }
-            const codeTaken = await isStudentCodeTaken(prisma, studentCode, req.params.id);
-            if (codeTaken) {
-                return res.status(400).json({ message: 'Mã học sinh đã tồn tại ở học sinh khác' });
-            }
-        }
+        // Mã học sinh là bất biến (Immutable), giữ nguyên studentCode ban đầu của học sinh
+        const immutableStudentCode = student.studentCode;
 
         // Validate số điện thoại cá nhân (định dạng + duy nhất toàn hệ thống)
         if (phone !== undefined && phone !== null && phone !== '') {
@@ -270,7 +259,7 @@ export const updateStudent = async (req, res) => {
             return await tx.student.update({
                 where: { id: req.params.id },
                 data: {
-                    studentCode: studentCode || undefined,
+                    studentCode: immutableStudentCode,
                     fullName: fullName !== undefined ? fullName.trim() : undefined,
                     gender: gender || undefined,
                     classId: classId !== undefined ? (classId === '' ? null : classId) : undefined,

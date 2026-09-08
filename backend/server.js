@@ -15,6 +15,7 @@ import attendanceRoutes from './routes/attendanceRoutes.js';
 import examRoutes from './routes/examRoutes.js';
 import systemSettingRoutes from './routes/systemSettingRoutes.js';
 import auditLogRoutes from './routes/auditLogRoutes.js';
+import importExportRoutes from './routes/importExportRoutes.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { initDefaultUsers } from './utils/initDefaultUsers.js';
@@ -81,6 +82,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/settings', systemSettingRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
+app.use('/api/import-export', importExportRoutes);
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running with PostgreSQL (Prisma) and RBAC+Scope Engine' });

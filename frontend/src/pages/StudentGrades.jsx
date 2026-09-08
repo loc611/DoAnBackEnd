@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { BookOpen, Award, TrendingUp, Calendar, AlertCircle, CheckCircle2, ChevronRight, FileText, Lock, Sparkles, Clock } from 'lucide-react';
+import { BookOpen, Award, TrendingUp, Calendar, AlertCircle, CheckCircle2, ChevronRight, FileText, Lock, Sparkles, Clock, Printer } from 'lucide-react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -12,6 +12,7 @@ import {
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
 import api from '../services/api';
+import StudentGradeReportCardModal from '../components/StudentGradeReportCardModal';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -26,6 +27,7 @@ const StudentGrades = () => {
   const [studentInfo, setStudentInfo] = useState(null);
   const [gradesList, setGradesList] = useState([]);
   const [selectedSemester, setSelectedSemester] = useState('HK1_2026');
+  const [isReportCardOpen, setIsReportCardOpen] = useState(false);
 
   useEffect(() => {
     fetchMyGrades();
@@ -134,6 +136,31 @@ const StudentGrades = () => {
     }
   };
 
+  const studentReportData = useMemo(() => {
+    if (!studentInfo) return null;
+    return {
+      studentCode: studentInfo.studentCode,
+      name: studentInfo.fullName,
+      dob: studentInfo.dob,
+      gender: studentInfo.gender,
+      math: currentGrade?.math ?? 0,
+      literature: currentGrade?.literature ?? 0,
+      english: currentGrade?.english ?? 0,
+      physics: currentGrade?.physics ?? 0,
+      chemistry: currentGrade?.chemistry ?? 0,
+      it: currentGrade?.it ?? 0,
+      average: gpa !== '—' ? gpa : '0.00',
+      rank: rank.replace('Học Lực ', ''),
+      status: currentGrade?.status || 'draft'
+    };
+  }, [studentInfo, currentGrade, gpa, rank]);
+
+  const classInfo = {
+    className: studentInfo?.class?.className || 'Lớp học',
+    grade: studentInfo?.class?.grade || 10,
+    homeroomTeacherName: studentInfo?.class?.homeroomTeacher?.fullName || 'ThS. Nguyễn Văn Quản Khoa'
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -167,18 +194,29 @@ const StudentGrades = () => {
           </p>
         </div>
 
-        {/* Semester Select */}
-        <div className="bg-white/10 backdrop-blur-md p-2 rounded-2xl border border-white/20 flex items-center gap-2">
-          <Calendar size={18} className="text-indigo-200 ml-2" />
-          <select
-            value={selectedSemester}
-            onChange={(e) => setSelectedSemester(e.target.value)}
-            className="bg-transparent text-white font-bold py-1 px-3 outline-none cursor-pointer text-sm"
+        {/* Action buttons */}
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setIsReportCardOpen(true)}
+            className="bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/20 text-white font-bold py-2 px-4 rounded-2xl flex items-center gap-2 text-sm transition-all shadow-sm cursor-pointer"
+            title="Xem và in Phiếu Báo Điểm / Học Bạ điện tử"
           >
-            {SEMESTERS.map(s => (
-              <option key={s.id} value={s.id} className="text-slate-800 font-medium">{s.name}</option>
-            ))}
-          </select>
+            <Printer size={17} /> In Phiếu Báo Điểm
+          </button>
+
+          {/* Semester Select */}
+          <div className="bg-white/10 backdrop-blur-md p-2 rounded-2xl border border-white/20 flex items-center gap-2">
+            <Calendar size={18} className="text-indigo-200 ml-2" />
+            <select
+              value={selectedSemester}
+              onChange={(e) => setSelectedSemester(e.target.value)}
+              className="bg-transparent text-white font-bold py-1 px-3 outline-none cursor-pointer text-sm"
+            >
+              {SEMESTERS.map(s => (
+                <option key={s.id} value={s.id} className="text-slate-800 font-medium">{s.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -290,6 +328,17 @@ const StudentGrades = () => {
           </p>
         </div>
       </div>
+
+      {/* Printable Report Card Modal */}
+      {studentReportData && (
+        <StudentGradeReportCardModal
+          isOpen={isReportCardOpen}
+          onClose={() => setIsReportCardOpen(false)}
+          studentData={studentReportData}
+          classData={classInfo}
+          semester={selectedSemester}
+        />
+      )}
     </div>
   );
 };

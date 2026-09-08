@@ -1,5 +1,6 @@
 import prisma from '../prismaClient.js';
 import bcrypt from 'bcryptjs';
+import AuditLogService from '../services/auditLogService.js';
 import { 
     isValidPhoneNumber, 
     isValidStudentCode, 
@@ -12,6 +13,15 @@ import { autoAssignFeeProfilesForStudent } from '../utils/feeAutoAssign.js';
 
 export const getUsers = async (req, res) => {
     try {
+        // Kiểm tra quyền xem danh sách người dùng (Admin hoặc Quản Khoa / BGH)
+        const isManagement = req.user.role === 'admin' || 
+                             req.user.teacher?.position === 'Trưởng khoa / Quản khoa' || 
+                             req.user.teacher?.position === 'Ban giám hiệu';
+        
+        if (!isManagement) {
+            return res.status(403).json({ message: 'Bạn không có quyền xem danh sách tài khoản' });
+        }
+
         const users = await prisma.user.findMany({
             orderBy: { createdAt: 'desc' },
             include: {
@@ -44,10 +54,6 @@ export const getUsers = async (req, res) => {
 export const createUser = async (req, res) => {
     try {
         let { username, email, password, role, ...profileData } = req.body;
-
-        if (!password || password.length < 6) {
-            return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 6 ký tự' });
-        }
 
         const cleanUsername = String(username).trim();
         let cleanEmail = email ? String(email).trim().toLowerCase() : '';
@@ -119,7 +125,14 @@ export const createUser = async (req, res) => {
             }
         }
 
-        const hashedPassword = await bcrypt.hash(password, 10);
+        // Mật khẩu khởi tạo tự động theo quy tắc [Mã]@123 nếu không truyền vào
+        let finalPassword = password;
+        if (!finalPassword || finalPassword.trim().length < 6) {
+            const codeIdentifier = profileData.studentCode || profileData.teacherCode || cleanUsername;
+            finalPassword = `${codeIdentifier}@123`;
+        }
+
+        const hashedPassword = await bcrypt.hash(finalPassword, 10);
 
         const newUser = await prisma.$transaction(async (tx) => {
             const user = await tx.user.create({
@@ -195,9 +208,6 @@ export const createUser = async (req, res) => {
                         parentPhone: profileData.parentPhone || null
                     }
                 });
-                if (createdStudent.classId) {
-                    // Sẽ chạy sau transaction
-                }
             }
 
             return user;
@@ -288,12 +298,34 @@ export const updateUser = async (req, res) => {
 
 export const updateStatus = async (req, res) => {
     try {
-        const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+        const { status, reason } = req.body;
+        if (!['active', 'suspended', 'blocked'].includes(status)) {
+            return res.status(400).json({ message: 'Trạng thái không hợp lệ (chỉ chấp nhận: active, suspended, blocked)' });
+        }
+
+        // Quyền: Admin hoặc Quản Khoa / BGH
+        const isManagement = req.user.role === 'admin' || 
+                             req.user.teacher?.position === 'Trưởng khoa / Quản khoa' || 
+                             req.user.teacher?.position === 'Ban giám hiệu';
+        
+        if (!isManagement) {
+            return res.status(403).json({ message: 'Chỉ Admin, Ban Giám Hiệu hoặc Quản Khoa mới có quyền Khóa / Đình chỉ tài khoản' });
+        }
+
+        const user = await prisma.user.findUnique({ 
+            where: { id: req.params.id },
+            include: { teacher: true, student: true, admin: true }
+        });
         if (!user) return res.status(404).json({ message: 'Tài khoản không tồn tại' });
 
+        if (user.id === req.user.id) {
+            return res.status(400).json({ message: 'Không thể tự khóa hoặc đình chỉ tài khoản của chính mình' });
+        }
+
+        const oldStatus = user.status;
         const updatedUser = await prisma.user.update({
             where: { id: req.params.id },
-            data: { status: req.body.status }
+            data: { status }
         });
 
         let statusText = 'cập nhật trạng thái';
@@ -301,7 +333,24 @@ export const updateStatus = async (req, res) => {
         else if (updatedUser.status === 'blocked') statusText = 'khóa';
         else if (updatedUser.status === 'suspended') statusText = 'đình chỉ';
 
-        res.json({ message: `Đã ${statusText} tài khoản thành công`, status: updatedUser.status });
+        // Ghi vết kiểm toán (Audit Logging)
+        await AuditLogService.log({
+            userId: req.user.id,
+            action: `ACCOUNT_STATUS_${status.toUpperCase()}`,
+            module: 'auth',
+            resource: 'User',
+            resourceId: user.id,
+            oldData: { status: oldStatus },
+            newData: { status: updatedUser.status },
+            reason: reason || `Quản trị viên / Quản khoa ${statusText} tài khoản`,
+            req,
+            severity: status === 'active' ? 'info' : 'critical'
+        });
+
+        res.json({ 
+            message: `Đã ${statusText} tài khoản thành công`, 
+            status: updatedUser.status 
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Lỗi khi đổi trạng thái' });

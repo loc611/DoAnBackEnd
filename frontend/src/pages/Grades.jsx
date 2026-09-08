@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, Filter, Save, Edit, Lock, Unlock, CheckCircle2, AlertCircle, FileSpreadsheet, Sparkles, TrendingUp } from 'lucide-react';
+import { Search, Filter, Save, Edit, Lock, Unlock, CheckCircle2, AlertCircle, FileSpreadsheet, Sparkles, TrendingUp, Download, Printer, FileText } from 'lucide-react';
 import api from '../services/api';
 import Swal from 'sweetalert2';
+import StudentGradeReportCardModal from '../components/StudentGradeReportCardModal';
 
 const SEMESTERS = [
   { id: 'HK1_2026', name: 'Học kỳ 1 (2025 - 2026)' },
@@ -28,6 +29,8 @@ const Grades = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isReportCardOpen, setIsReportCardOpen] = useState(false);
+  const [selectedReportStudent, setSelectedReportStudent] = useState(null);
   
   const userRole = localStorage.getItem('userRole') || 'student';
   const userData = JSON.parse(localStorage.getItem('userData') || '{}');
@@ -184,21 +187,96 @@ const Grades = () => {
     }
   };
 
+  const isManagementUser = userRole === 'admin' || 
+                           userData?.position === 'Trưởng khoa / Quản khoa' || 
+                           userData?.position === 'Ban giám hiệu';
+
   const handleUnlockBoard = async () => {
-    const result = await Swal.fire({
+    if (!isManagementUser) {
+      return Swal.fire('Không có quyền', 'Chỉ Ban Giám Hiệu, Quản Khoa hoặc Quản trị viên mới có quyền mở khóa bảng điểm đã niêm phong.', 'warning');
+    }
+
+    const { value: reason } = await Swal.fire({
       title: 'Mở khóa bảng điểm để sửa?',
-      text: 'Bảng điểm sẽ chuyển về trạng thái Lưu Nháp (Draft) để cho phép giáo viên điều chỉnh điểm số.',
+      text: 'Bảng điểm sẽ chuyển về trạng thái Lưu Nháp (Draft) để cho phép giáo viên điều chỉnh điểm số. Hành động này sẽ được ghi vào nhật ký kiểm toán (Audit Log).',
+      input: 'textarea',
+      inputLabel: 'Lý do mở khóa (Bắt buộc):',
+      inputPlaceholder: 'Nhập lý do phê duyệt mở khóa điểm (VD: Phúc khảo điểm thi, chỉnh sửa sai sót nhập liệu...)',
+      inputValidator: (val) => {
+        if (!val || !val.trim()) {
+          return 'Bạn bắt buộc phải nhập lý do mở khóa!';
+        }
+      },
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#f59e0b',
-      cancelButtonText: 'Hủy',
-      confirmButtonText: 'Mở khóa ngay'
+      cancelButtonText: 'Hủy bỏ',
+      confirmButtonText: 'Xác nhận mở khóa'
     });
 
-    if (result.isConfirmed) {
-      handleSaveGrades('draft');
+    if (reason) {
+      try {
+        setSaving(true);
+        const res = await api.put(`/grades/class/${selectedClass}/unlock`, {
+          semester: selectedSemester,
+          reason: reason.trim()
+        });
+
+        setBoardStatus('draft');
+        setIsEditing(true);
+        Swal.fire('Đã mở khóa!', res.data?.message || 'Bảng điểm đã được mở khóa để chỉnh sửa.', 'success');
+      } catch (error) {
+        console.error('Failed to unlock grades', error);
+        Swal.fire('Lỗi', error.response?.data?.message || 'Không thể mở khóa bảng điểm', 'error');
+      } finally {
+        setSaving(false);
+      }
     }
   };
+
+  const handleExportGradesExcel = () => {
+    try {
+      if (processedGrades.length === 0) {
+        Swal.fire('Thông báo', 'Không có dữ liệu điểm để xuất', 'info');
+        return;
+      }
+
+      const currentClassObj = classes.find(c => c.id === selectedClass);
+      const currentClassName = currentClassObj?.className || 'Lop';
+      const headers = 'STT,Mã Học Sinh,Họ và Tên,Lớp,Toán,Ngữ Văn,Tiếng Anh,Vật Lý,Hóa Học,Tin Học,Điểm Trung Bình,Xếp Loại,Trạng Thái\n';
+      const rows = processedGrades.map((s, idx) => {
+        const st = s.status === 'locked' ? 'Đã công bố' : 'Bản nháp';
+        return `"${idx + 1}","${s.studentCode || s.id}","${s.name}","${currentClassName}","${s.math}","${s.literature}","${s.english}","${s.physics}","${s.chemistry}","${s.it}","${s.average}","${s.rank}","${st}"`;
+      }).join('\n');
+
+      const csvContent = '\uFEFF' + headers + rows;
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Bang_Diem_Lop_${currentClassName}_${selectedSemester}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      Swal.fire('Thành công', `Đã xuất bảng điểm lớp ${currentClassName} ra file Excel/CSV!`, 'success');
+    } catch (err) {
+      console.error(err);
+      Swal.fire('Lỗi', 'Không thể xuất file bảng điểm', 'error');
+    }
+  };
+
+  const handleOpenClassReportCard = () => {
+    setSelectedReportStudent(null);
+    setIsReportCardOpen(true);
+  };
+
+  const handleOpenStudentReportCard = (student) => {
+    setSelectedReportStudent(student);
+    setIsReportCardOpen(true);
+  };
+
+  const currentClassInfo = classes.find(c => c.id === selectedClass) || { className: '10A1', homeroomTeacherName: 'ThS. Nguyễn Văn Quản Khoa' };
 
   return (
     <div className="space-y-6 font-sans">
@@ -216,20 +294,44 @@ const Grades = () => {
               </span>
             )}
           </div>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">Quy trình 2 bước: Giáo viên nhập & lưu nháp → Khóa bảng điểm và công bố toàn trường</p>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">Quy trình 2 bước: Giáo viên nhập & lưu nháp → Khóa bảng điểm và công bố toàn trường (Khi khóa HS mới thấy điểm)</p>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+          {/* Export Excel Button */}
+          <button
+            onClick={handleExportGradesExcel}
+            className="px-3.5 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+            title="Xuất bảng điểm lớp hiện tại ra file Excel (.csv chuẩn)"
+          >
+            <Download size={16} className="text-emerald-600" /> Xuất Excel
+          </button>
+
+          {/* Print Class Report Cards Button */}
+          <button
+            onClick={handleOpenClassReportCard}
+            className="px-3.5 py-2.5 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+            title="In hoặc xuất PDF phiếu báo điểm cho cả lớp"
+          >
+            <Printer size={16} className="text-blue-600" /> In Phiếu Điểm
+          </button>
+
           {userRole !== 'student' && (
             <>
               {boardStatus === 'locked' ? (
-                <button
-                  onClick={handleUnlockBoard}
-                  disabled={saving}
-                  className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs sm:text-sm font-bold shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Unlock size={16} /> Mở khóa Chỉnh sửa
-                </button>
+                isManagementUser ? (
+                  <button
+                    onClick={handleUnlockBoard}
+                    disabled={saving}
+                    className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs sm:text-sm font-bold shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Unlock size={16} /> Mở khóa Bảng điểm (Quản Khoa / BGH)
+                  </button>
+                ) : (
+                  <span className="px-3 py-2 rounded-xl bg-slate-100 text-slate-500 text-xs font-semibold flex items-center gap-1.5 border border-slate-200">
+                    <Lock size={14} /> Bảng điểm đã niêm phong
+                  </span>
+                )
               ) : (
                 <>
                   <button
@@ -237,7 +339,7 @@ const Grades = () => {
                     disabled={saving}
                     className="px-4 py-2.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Save size={16} /> Lưu Nháp
+                    <Save size={16} /> Lưu Nháp (Bản Nháp)
                   </button>
                   <button
                     onClick={() => handleSaveGrades('locked')}
@@ -344,6 +446,7 @@ const Grades = () => {
                   <th className="px-4 py-4">Tin</th>
                   <th className="px-4 py-4 bg-indigo-50/70 text-indigo-900 font-extrabold">Điểm TB</th>
                   <th className="px-4 py-4">Xếp loại</th>
+                  <th className="px-4 py-4 text-center">In Phiếu</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -384,11 +487,20 @@ const Grades = () => {
                         {student.rank}
                       </span>
                     </td>
+                    <td className="px-4 py-4 text-center">
+                      <button
+                        onClick={() => handleOpenStudentReportCard(student)}
+                        className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 hover:text-indigo-800 transition-colors inline-flex items-center justify-center cursor-pointer"
+                        title={`In phiếu báo điểm cho ${student.name}`}
+                      >
+                        <Printer size={16} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {processedGrades.length === 0 && (
                   <tr>
-                    <td colSpan="10" className="px-4 py-12 text-slate-400 text-center font-medium">Không có dữ liệu điểm cho lớp này</td>
+                    <td colSpan="11" className="px-4 py-12 text-slate-400 text-center font-medium">Không có dữ liệu điểm cho lớp này</td>
                   </tr>
                 )}
               </tbody>
@@ -396,6 +508,16 @@ const Grades = () => {
           )}
         </div>
       </div>
+
+      {/* Printable Report Card Modal */}
+      <StudentGradeReportCardModal
+        isOpen={isReportCardOpen}
+        onClose={() => setIsReportCardOpen(false)}
+        studentData={selectedReportStudent}
+        classData={currentClassInfo}
+        studentsList={processedGrades}
+        semester={selectedSemester}
+      />
     </div>
   );
 };
