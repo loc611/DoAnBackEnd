@@ -1,29 +1,58 @@
+# ==========================================
+# Docker Compose - Enterprise Production Configuration
+# Trường THPT TTLN School Management System
+# ==========================================
+
 services:
   backend:
     build:
       context: ./backend
+      dockerfile: Dockerfile
+    image: school-management-backend:latest
     container_name: school_backend
     restart: unless-stopped
     ports:
-      - "5000:5000"
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
+      - "${BACKEND_PORT:-5000}:5000"
     environment:
       - NODE_ENV=production
       - PORT=5000
-      - DATABASE_URL=postgresql://neondb_owner:npg_IKecRfm4o6gZ@ep-aged-silence-azt04b35-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-      - JWT_SECRET=supersecretkey_for_dev_only
-      - GOOGLE_SHEET_WEBHOOK_URL=https://script.google.com/macros/s/AKfycbxGfcWXmnD0-pKDZiC8NbOQn0v_9fsfIw18iaFgv0PpUE8Pt0myFUGVNhswWnxXmNQ49A/exec
+      - DATABASE_URL=${DATABASE_URL:-postgresql://neondb_owner:npg_IKecRfm4o6gZ@ep-aged-silence-azt04b35-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require}
+      - JWT_SECRET=${JWT_SECRET:-supersecretkey_for_dev_only}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-supersecretkey_refresh_dev}
+      - GOOGLE_SHEET_WEBHOOK_URL=${GOOGLE_SHEET_WEBHOOK_URL:-}
+      - VIETQR_ACCOUNT_NO=${VIETQR_ACCOUNT_NO:-19036888888}
+      - VIETQR_ACCOUNT_NAME=${VIETQR_ACCOUNT_NAME:-TRUONG THPT TTLN}
+      - VIETQR_BIN=${VIETQR_BIN:-970407}
+    networks:
+      - school_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   frontend:
     build:
       context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=/api
+    image: school-management-frontend:latest
     container_name: school_frontend
-    ports:
-      - "80:80"
     restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    networks:
+      - school_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
 
-
+networks:
+  school_net:
+    driver: bridge

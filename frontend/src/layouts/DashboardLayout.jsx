@@ -30,7 +30,9 @@ import {
   ExternalLink,
   HelpCircle,
   CheckCircle2,
-  Clock
+  Clock,
+  FileText,
+  FileQuestion
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
@@ -161,6 +163,8 @@ const DashboardLayout = () => {
           { icon: CalendarDays, label: 'Lịch thi học kỳ', path: '/exams' },
           { icon: UserCheck, label: 'Điểm danh chuyên cần', path: '/attendance' },
           { icon: BookOpenCheck, label: 'Sổ điểm học sinh', path: '/grades' },
+          { icon: FileText, label: 'Sổ đầu bài điện tử', path: '/lesson-logs' },
+          { icon: FileQuestion, label: 'Cổng đơn từ & phúc khảo', path: '/petitions' },
         ]
       },
       {
@@ -184,8 +188,10 @@ const DashboardLayout = () => {
         title: 'NGHIỆP VỤ SƯ PHẠM',
         items: [
           { icon: School, label: 'Lớp Chủ Nhiệm', path: '/teacher/homeroom' },
+          { icon: FileText, label: 'Sổ Đầu Bài Điện Tử', path: '/lesson-logs' },
           { icon: UserCheck, label: 'Điểm Danh Học Sinh', path: '/attendance' },
           { icon: BookOpenCheck, label: 'Sổ Nhập Điểm', path: '/grades' },
+          { icon: FileQuestion, label: 'Xử Lý Đơn & Phúc Khảo', path: '/petitions' },
           { icon: Calendar, label: 'Lịch Giảng Dạy', path: '/schedule' },
           { icon: CalendarDays, label: 'Lịch Thi & Coi Thi', path: '/exams' },
           { icon: Users, label: 'Tra Cứu Học Sinh', path: '/students' },
@@ -221,6 +227,7 @@ const DashboardLayout = () => {
           { icon: Calendar, label: 'Thời Khóa Biểu', path: '/student/schedule' },
           { icon: CalendarDays, label: 'Lịch Thi Phòng Thi', path: '/student/exams' },
           { icon: UserCheck, label: 'Chuyên Cần Điểm Danh', path: '/student/attendance' },
+          { icon: FileQuestion, label: 'Đơn Từ & Phúc Khảo', path: '/petitions' },
         ]
       },
       {

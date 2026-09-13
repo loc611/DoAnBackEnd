@@ -1,4 +1,5 @@
 import prisma from '../prismaClient.js';
+import VietQrService from '../services/vietQrService.js';
 
 export const getDashboardSummary = async (req, res) => {
     try {
@@ -25,7 +26,7 @@ export const getDashboardSummary = async (req, res) => {
         const classDebtsMap = {};
 
         for (const bill of bills) {
-            const amount = bill.feeProfile?.amount || 0;
+            const amount = bill.finalAmount !== null && bill.finalAmount !== undefined ? bill.finalAmount : (bill.feeProfile?.amount || 0);
             tongThuDuKien += amount;
             if (bill.status === 'paid') {
                 tongDaThu += amount;
@@ -303,9 +304,10 @@ export const getClassStudentsTuition = async (req, res) => {
         let totalUnpaidAmount = 0;
         let fullyPaidStudentsCount = 0;
 
+        const getBillAmount = (b) => (b.finalAmount !== null && b.finalAmount !== undefined) ? b.finalAmount : (b.feeProfile?.amount || 0);
         const enrichedStudents = students.map(st => {
-            const studentTotal = (st.feeBills || []).reduce((sum, b) => sum + (b.feeProfile?.amount || 0), 0);
-            const studentPaid = (st.feeBills || []).filter(b => b.status === 'paid').reduce((sum, b) => sum + (b.feeProfile?.amount || 0), 0);
+            const studentTotal = (st.feeBills || []).reduce((sum, b) => sum + getBillAmount(b), 0);
+            const studentPaid = (st.feeBills || []).filter(b => b.status === 'paid').reduce((sum, b) => sum + getBillAmount(b), 0);
             const studentUnpaid = studentTotal - studentPaid;
 
             totalClassAmount += studentTotal;
@@ -403,5 +405,35 @@ export const payAllStudentBills = async (req, res) => {
     } catch (error) {
         console.error('Error in payAllStudentBills:', error);
         res.status(500).json({ success: false, message: 'Lỗi hệ thống khi gạch nợ toàn bộ' });
+    }
+};
+
+/**
+ * Sinh mã VietQR động cho hóa đơn học phí
+ */
+export const getBillQrCode = async (req, res) => {
+    try {
+        const { billId } = req.params;
+        const qrData = await VietQrService.generateQrForBill(billId);
+        res.json({
+            success: true,
+            data: qrData
+        });
+    } catch (error) {
+        console.error('Error in getBillQrCode:', error);
+        res.status(500).json({ success: false, message: error.message || 'Lỗi khi sinh mã VietQR' });
+    }
+};
+
+/**
+ * Webhook nhận thông báo biến động số dư ngân hàng và đối soát gạch nợ tự động
+ */
+export const handlePaymentWebhook = async (req, res) => {
+    try {
+        const result = await VietQrService.processPaymentWebhook(req.body);
+        res.json(result);
+    } catch (error) {
+        console.error('Error in handlePaymentWebhook:', error);
+        res.status(500).json({ success: false, message: 'Lỗi xử lý webhook ngân hàng: ' + error.message });
     }
 };

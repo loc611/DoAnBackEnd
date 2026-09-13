@@ -1,4 +1,5 @@
 import prisma from '../prismaClient.js';
+import { calculateStudentTuition } from '../utils/feePolicyEngine.js';
 
 // Tạo mới hồ sơ học phí
 export const createFeeProfile = async (req, res) => {
@@ -143,9 +144,14 @@ export const assignFeeProfile = async (req, res) => {
             return res.status(400).json({ message: 'Vui lòng chọn khối hoặc lớp áp dụng' });
         }
 
-        // Lấy tất cả học sinh thỏa mãn điều kiện
+        // Lấy tất cả học sinh thỏa mãn điều kiện kèm chính sách ưu đãi đang có
         const students = await prisma.student.findMany({
-            where: whereCondition
+            where: whereCondition,
+            include: {
+                policies: {
+                    where: { status: 'ACTIVE' }
+                }
+            }
         });
 
         if (students.length === 0) {
@@ -174,13 +180,23 @@ export const assignFeeProfile = async (req, res) => {
         const dueDate = new Date();
         dueDate.setDate(dueDate.getDate() + 30);
 
-        // Tạo hóa đơn hàng loạt
-        const dataToInsert = studentsToAssign.map(s => ({
-            feeProfileId,
-            studentId: s.id,
-            status: 'unpaid',
-            dueDate
-        }));
+        // Tạo hóa đơn hàng loạt có áp dụng Policy Engine miễn giảm
+        const dataToInsert = studentsToAssign.map(s => {
+            const calc = calculateStudentTuition(feeProfile.amount, s.policies || []);
+            const isFullExempt = calc.finalAmount === 0;
+
+            return {
+                feeProfileId,
+                studentId: s.id,
+                originalAmount: feeProfile.amount,
+                discountAmount: calc.discountAmount,
+                finalAmount: calc.finalAmount,
+                appliedPolicySnapshot: calc.calculationSnapshot,
+                status: isFullExempt ? 'paid' : 'unpaid',
+                dueDate,
+                paidAt: isFullExempt ? new Date() : null
+            };
+        });
 
         await prisma.feeBill.createMany({
             data: dataToInsert,
@@ -188,7 +204,7 @@ export const assignFeeProfile = async (req, res) => {
         });
 
         res.status(200).json({
-            message: `Gán hồ sơ học phí thành công cho ${dataToInsert.length} học sinh`,
+            message: `Gán hồ sơ học phí thành công cho ${dataToInsert.length} học sinh (Đã tự động tính toán miễn giảm chính sách)`,
             assignedCount: dataToInsert.length
         });
 

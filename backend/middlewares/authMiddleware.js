@@ -2,6 +2,23 @@ import jwt from 'jsonwebtoken';
 import prisma from '../prismaClient.js';
 import PermissionService from '../services/permissionService.js';
 
+let cachedSettings = { maintenanceMode: false, lastFetched: 0 };
+
+const isMaintenanceActive = async () => {
+    const now = Date.now();
+    if (now - cachedSettings.lastFetched > 15000) { // Cache 15 giây
+        try {
+            const s = await prisma.systemSetting.findUnique({ where: { id: 'default_setting' }, select: { maintenanceMode: true } });
+            if (s) {
+                cachedSettings = { maintenanceMode: !!s.maintenanceMode, lastFetched: now };
+            }
+        } catch (e) {
+            // Ignore DB error
+        }
+    }
+    return cachedSettings.maintenanceMode;
+};
+
 export const protect = async (req, res, next) => {
     try {
         let token;
@@ -18,7 +35,7 @@ export const protect = async (req, res, next) => {
         const decoded = jwt.verify(token, jwtSecret);
         const role = (decoded.role || '').toLowerCase();
         
-        // Tối ưu hóa truy vấn: Chỉ nạp quan hệ tương ứng với Role của người dùng để giảm thiểu SQL JOIN overhead
+        // Tối ưu hóa truy vấn: Chỉ nạp quan hệ tương ứng với Role của người dùng
         const includeOptions = {
             userRoles: {
                 include: { role: true }
@@ -29,7 +46,12 @@ export const protect = async (req, res, next) => {
             includeOptions.teacher = {
                 include: {
                     homeroomAssignments: true,
-                    teacherAssignments: true
+                    teacherAssignments: {
+                        include: {
+                            subject: true,
+                            class: true
+                        }
+                    }
                 }
             };
         } else if (role === 'student' || role === 'alumni') {
@@ -42,7 +64,13 @@ export const protect = async (req, res, next) => {
         } else if (role === 'parent') {
             includeOptions.parent = {
                 include: {
-                    guardianLinks: true
+                    guardianLinks: {
+                        include: {
+                            student: {
+                                include: { class: true }
+                            }
+                        }
+                    }
                 }
             };
         } else if (role === 'admin' || role === 'it_admin' || role === 'principal' || role === 'vice_principal') {
@@ -61,7 +89,6 @@ export const protect = async (req, res, next) => {
                 include: includeOptions
             });
         } catch (queryErr) {
-            // Fallback nếu có schema mismatch
             user = await prisma.user.findUnique({
                 where: { id: decoded.id },
                 include: {
@@ -85,21 +112,52 @@ export const protect = async (req, res, next) => {
             return res.status(403).json({ success: false, message: 'Tài khoản của bạn đang bị đình chỉ hoạt động' });
         }
 
+        // Kiểm tra Chế độ Bảo trì (Maintenance Mode)
+        const inMaintenance = await isMaintenanceActive();
+        const isAdmin = user.role === 'admin' || user.role === 'principal' || user.role === 'it_admin';
+        if (inMaintenance && !isAdmin) {
+            return res.status(503).json({ 
+                success: false, 
+                message: 'Hệ thống đang trong thời gian bảo trì kỹ thuật theo kế hoạch của nhà trường. Vui lòng quay lại sau.' 
+            });
+        }
+
         // Gắn method user.can('permission.name', context) cho controller và middleware sử dụng
         PermissionService.attachUserCan(user);
         req.user = user;
         next();
     } catch (error) {
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({ success: false, code: 'TOKEN_EXPIRED', message: 'Phiên đăng nhập đã hết hạn. Vui lòng làm mới token.' });
+        }
         return res.status(401).json({ success: false, message: 'Token không hợp lệ hoặc đã hết hạn' });
     }
 };
 
 export const authorize = (...roles) => {
     return (req, res, next) => {
-        if (!req.user || !roles.includes(req.user.role)) {
-            return res.status(403).json({ success: false, message: 'Bạn không có quyền thực hiện hành động này' });
+        if (!req.user) {
+            return res.status(401).json({ success: false, message: 'Yêu cầu đăng nhập' });
+        }
+        
+        const userRole = (req.user.role || '').toLowerCase();
+        const normalizedRoles = roles.map(r => r.toLowerCase());
+
+        // Admin luôn có quyền truy cập các route cơ bản
+        if (userRole === 'admin' || userRole === 'principal') {
+            return next();
+        }
+
+        // Kiểm tra role chính hoặc các role phụ trong userRoles
+        const hasMainRole = normalizedRoles.includes(userRole);
+        const hasUserRole = req.user.userRoles?.some(ur => normalizedRoles.includes(ur.role?.name?.toLowerCase()));
+
+        if (!hasMainRole && !hasUserRole) {
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Bạn không có quyền thực hiện hành động này (Cần vai trò: ' + roles.join(', ') + ')' 
+            });
         }
         next();
     };
 };
-
