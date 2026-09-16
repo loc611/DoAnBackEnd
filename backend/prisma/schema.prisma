@@ -6,342 +6,650 @@ datasource db {
   provider = "postgresql"
 }
 
-// ==========================================
-// 🛡️ ENUMS
-// ==========================================
-enum Role {
-  ADMIN
-  TEACHER
-  STUDENT
+enum StudentStatus {
+  ENROLLED_DIRECT
+  PENDING_MAKEUP_EXAM
+  ACTIVE
+  SUSPENDED
 }
 
-// ==========================================
-// 1️⃣ USER / AUTHENTICATION MODEL
-// ==========================================
+enum SemesterType {
+  HK1
+  FULL_YEAR
+}
+
 model User {
-  id        String   @id @default(uuid())
-  username  String   @unique
-  email     String   @unique
-  password  String
-  role      String   // Hoặc dùng enum Role nếu muốn
-  status    String   @default("active") // 'active', 'inactive', 'blocked'
-  
-  // Relations
+  id            String         @id @default(uuid())
+  username      String         @unique
+  email         String         @unique
+  password      String
+  role          String
+  status        String         @default("active")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   admin         Admin?
-  teacher       Teacher?
-  student       Student?
+  auditLogs     AuditLog[]
   notifications Notification[]
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  Parent        Parent?
+  student       Student?
+  teacher       Teacher?
+  UserRole          UserRole[]
+  reviewedReviews   GradeReviewRequest[] @relation("ReviewedByAdminOrTeacher")
+  reviewedAbsences  AbsenceRequest[]     @relation("ReviewedAbsence")
 
   @@index([email])
   @@index([role])
 }
 
-// ==========================================
-// 👑 ADMIN PROFILE
-// ==========================================
 model Admin {
-  id       String  @id @default(uuid())
-  userId   String  @unique
-  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fullName String
-  phone    String?
-
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  fullName  String
+  phone     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// ==========================================
-// 🧑‍🏫 TEACHER PROFILE
-// ==========================================
 model Teacher {
-  id             String    @id @default(uuid())
-  userId         String    @unique
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  teacherCode    String    @unique
-  fullName       String
-  phone          String?
-  specialization String?
-
-  // Relations
-  homeroomClasses Class[]   @relation("HomeroomTeacher")
-  subjects        Subject[]
-
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                 String               @id @default(uuid())
+  userId             String               @unique
+  teacherCode        String               @unique
+  fullName           String
+  phone              String?
+  specialization     String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  position           String?              @default("Giáo viên bộ môn")
+  homeroomClasses    Class[]              @relation("HomeroomTeacher")
+  HomeroomAssignment HomeroomAssignment[]
+  subjects           Subject[]
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  TeacherAssignment  TeacherAssignment[]
 
   @@index([teacherCode])
 }
 
-// ==========================================
-// 🏫 CLASS & SUBJECT
-// ==========================================
 model Class {
-  id                String    @id @default(uuid())
-  className         String    @unique
-  grade             Int
-  homeroomTeacherId String?
-  homeroomTeacher   Teacher?  @relation("HomeroomTeacher", fields: [homeroomTeacherId], references: [id], onDelete: SetNull)
-  academicYear      String
-  status            String    @default("active")
-
-  // Relations
-  students      Student[]
-  schedules     Schedule[]
-  grades        Grade[]
-  attendances   Attendance[]
-  examSchedules ExamSchedule[]
-  notifications Notification[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String               @id @default(uuid())
+  className          String               @unique
+  grade              Int
+  homeroomTeacherId  String?
+  academicYear       String
+  status             String               @default("active")
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  schoolYearId       String?
+  attendances        Attendance[]
+  homeroomTeacher    Teacher?             @relation("HomeroomTeacher", fields: [homeroomTeacherId], references: [id])
+  examSchedules      ExamSchedule[]
+  grades             Grade[]
+  HomeroomAssignment HomeroomAssignment[]
+  notifications      Notification[]
+  schedules          Schedule[]
+  students              Student[]
+  TeacherAssignment     TeacherAssignment[]
+  assignedRegistrations SubjectGroupRegistration[]
 }
 
 model Subject {
-  id             String   @id @default(uuid())
-  subjectCode    String   @unique
-  name           String
-  grade          Int      @default(0) // 0: Toàn trường / Tất cả khối, 10: Khối 10, 11: Khối 11, 12: Khối 12
-  periodsPerWeek Int      @default(2) // Số tiết học / tuần
-  credits        Int      @default(2) // Giữ trường tương thích nếu cần
-  type           String   @default("Bắt buộc") // 'Bắt buộc', 'Tự chọn'
-  teacherId      String?
-  teacher        Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
-
-  subjectEnrollments SubjectEnrollment[]
+  id                 String              @id @default(uuid())
+  subjectCode        String              @unique
+  name               String
+  credits            Int                 @default(2)
+  type               String              @default("Bắt buộc")
+  teacherId          String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  grade              Int                 @default(0)
+  periodsPerWeek     Int                 @default(2)
   attendances        Attendance[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  teacher            Teacher?            @relation(fields: [teacherId], references: [id])
+  subjectEnrollments SubjectEnrollment[]
+  TeacherAssignment  TeacherAssignment[]
+  gradeDetails       SubjectGradeDetail[]
 }
 
-// ==========================================
-// 📚 SUBJECT ENROLLMENT (Học sinh học môn tự chọn/chuyên đề)
-// ==========================================
 model SubjectEnrollment {
   id           String   @id @default(uuid())
   studentId    String
-  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   subjectId    String
-  subject      Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   academicYear String   @default("2026-2027")
   semester     String   @default("HK1_2026")
   createdAt    DateTime @default(now())
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject      Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
   @@unique([studentId, subjectId, semester])
   @@index([studentId])
   @@index([subjectId])
 }
 
-// ==========================================
-// 🎓 STUDENT PROFILE
-// ==========================================
 model Student {
-  id          String    @id @default(uuid())
-  userId      String    @unique
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  studentCode String    @unique
-  fullName    String
-  dateOfBirth DateTime?
-  gender      String?
-  address     String?
-  phone       String?
-  parentName  String?
-  parentPhone String?
-  
-  classId     String?
-  class       Class?    @relation(fields: [classId], references: [id], onDelete: SetNull)
-
-  grades             Grade[]
+  id                 String              @id @default(uuid())
+  userId             String              @unique
+  studentCode        String              @unique
+  fullName           String
+  dateOfBirth        DateTime?
+  gender             String?
+  address            String?
+  phone              String?
+  parentName         String?
+  parentPhone        String?
+  classId            String?
+  status             StudentStatus       @default(ACTIVE)
+  email              String?
+  enrolledAt         DateTime?           @db.Timestamptz
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
   attendances        Attendance[]
-  subjectEnrollments SubjectEnrollment[]
   feeBills           FeeBill[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  grades             Grade[]
+  GuardianLink       GuardianLink[]
+  class              Class?              @relation(fields: [classId], references: [id])
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectEnrollments SubjectEnrollment[]
+  transferRecords    TransferRecord[]
+  makeupExams              MakeupExam[]
+  transferredGrades        TransferredGrade[]
+  subjectGradeDetails      SubjectGradeDetail[]
+  gradeReviewRequests      GradeReviewRequest[]
+  absenceRequests          AbsenceRequest[]
+  subjectGroupRegistration SubjectGroupRegistration?
 
   @@index([studentCode])
   @@index([classId])
+  @@index([status])
 }
 
-// ==========================================
-// 📅 SCHEDULE (Lịch học)
-// ==========================================
 model Schedule {
-  id        String @id @default(uuid())
+  id        String   @id @default(uuid())
   classId   String
-  class     Class  @relation(fields: [classId], references: [id], onDelete: Cascade)
-  semester  String @default("HK1_2026")
+  semester  String   @default("HK1_2026")
   period    String
-  
-  monday    String @default("-")
-  tuesday   String @default("-")
-  wednesday String @default("-")
-  thursday  String @default("-")
-  friday    String @default("-")
-
+  monday    String   @default("-")
+  tuesday   String   @default("-")
+  wednesday String   @default("-")
+  thursday  String   @default("-")
+  friday    String   @default("-")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  saturday  String   @default("-")
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
 
   @@unique([classId, semester, period])
   @@index([classId, semester])
 }
 
-// ==========================================
-// 📊 ATTENDANCE, EXAM & GRADES
-// ==========================================
 model Attendance {
   id           String   @id @default(uuid())
   studentId    String
-  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   classId      String
-  class        Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
   date         DateTime
-  session      String   @default("morning") // 'morning', 'afternoon'
-  periodNumber Int      @default(1)         // Tiết 1..10
-  periodName   String   @default("Tiết 1")  // Tên hiển thị e.g. "Tiết 1 (07:00 - 07:45)"
-  subjectId    String?
-  subject      Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-  subjectName  String   @default("")
-  status       String   @default("present") // 'present', 'late', 'excused', 'unexcused'
+  session      String   @default("morning")
+  status       String   @default("present")
   note         String?
   markedById   String?
-
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  periodName   String   @default("Tiết 1")
+  periodNumber Int      @default(1)
+  subjectId    String?
+  subjectName  String   @default("")
+  class        Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject      Subject? @relation(fields: [subjectId], references: [id])
 
   @@unique([studentId, classId, date, periodNumber])
+  @@unique([studentId, classId, date, session])
   @@index([classId, date, periodNumber])
   @@index([studentId, date])
 }
 
 model ExamSchedule {
-  id           String    @id @default(uuid())
-  examName     String    // e.g. "Thi Giữa Học Kỳ 1"
-  examType     String    @default("Giữa kỳ") // 'Giữa kỳ', 'Cuối kỳ', 'Khảo sát'
+  id           String   @id @default(uuid())
+  examName     String
+  examType     String   @default("Giữa kỳ")
   subjectName  String
-  grade        Int       // 10, 11, 12 hoặc 0 (Tất cả)
+  grade        Int
   classId      String?
-  class        Class?    @relation(fields: [classId], references: [id], onDelete: SetNull)
   examDate     DateTime
-  startTime    String    // e.g. "07:30"
-  duration     Int       // minutes, e.g. 45, 60, 90
-  room         String    // e.g. "Phòng 101 - A1"
-  examFormat   String    @default("Trắc nghiệm") // 'Trắc nghiệm', 'Tự luận', 'Trắc nghiệm + Tự luận'
-  semester     String    @default("HK1_2026")
-  academicYear String    @default("2026-2027")
+  startTime    String
+  duration     Int
+  room         String
+  examFormat   String   @default("Trắc nghiệm")
+  semester     String   @default("HK1_2026")
+  academicYear String   @default("2026-2027")
   notes        String?
-
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  class        Class?   @relation(fields: [classId], references: [id])
 }
 
 model Grade {
-  id        String  @id @default(uuid())
-  studentId String
-  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  classId   String
-  class     Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
-  semester  String  @default("HK1_2026")
-  
-  math      Float   @default(0)
-  literature Float  @default(0)
-  english   Float   @default(0)
-  physics   Float   @default(0)
-  chemistry Float   @default(0)
-  it        Float   @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid())
+  studentId    String
+  classId      String
+  semester     String   @default("HK1_2026")
+  math         Float    @default(0)
+  literature   Float    @default(0)
+  english      Float    @default(0)
+  physics      Float    @default(0)
+  chemistry    Float    @default(0)
+  it           Float    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  status       String?  @default("draft")
+  schoolYearId String?
+  conductScore String?  @default("Tốt")
+  class        Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@unique([studentId, classId, semester])
 }
 
-// ==========================================
-// 💰 HỌC PHÍ & THÔNG BÁO
-// ==========================================
 model FeeProfile {
-  id             String     @id @default(uuid())
+  id             String    @id @default(uuid())
   name           String
   amount         Float
-  targetGrades   Int[]      // Array of grades, e.g., [10, 11, 12]
-  targetClassIds String[]   @default([]) // Array of class UUIDs, e.g., ["uuid1", "uuid2"]
-  academicYear   String     // e.g., "2026-2027"
-  semester       String     // e.g., "HK1" or "All"
-  
+  targetGrades   Int[]
+  academicYear   String
+  semester       String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  targetClassIds String[]  @default([])
   feeBills       FeeBill[]
-
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
 }
 
 model FeeBill {
   id           String     @id @default(uuid())
   feeProfileId String
-  feeProfile   FeeProfile @relation(fields: [feeProfileId], references: [id], onDelete: Cascade)
   studentId    String
-  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  
-  status       String     @default("unpaid") // 'unpaid', 'paid'
+  status       String     @default("unpaid")
   dueDate      DateTime?
   paidAt       DateTime?
-
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+  feeProfile   FeeProfile @relation(fields: [feeProfileId], references: [id], onDelete: Cascade)
+  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@unique([feeProfileId, studentId])
 }
 
 model Notification {
-  id          String   @id @default(uuid())
-  title       String
-  content     String
-  type        String   @default("Thông báo chung")
-  
+  id            String   @id @default(uuid())
+  title         String
+  content       String
+  type          String   @default("Thông báo chung")
   targetClassId String?
-  targetClass   Class?   @relation(fields: [targetClassId], references: [id], onDelete: SetNull)
-  
   createdById   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
   createdBy     User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  targetClass   Class?   @relation(fields: [targetClassId], references: [id])
+}
 
+model SystemSetting {
+  id                    String    @id @default("default_setting")
+  schoolName            String    @default("Trường THPT TTLN")
+  schoolCode            String    @default("THPT-TTLN")
+  address               String    @default("123 Đường Giáo Dục, TP. Hồ Chí Minh")
+  phone                 String    @default("028.3899.9999")
+  email                 String    @default("contact@thpt-ttln.edu.vn")
+  website               String    @default("https://thpt-ttln.edu.vn")
+  principalName         String    @default("ThS. Nguyễn Văn Quản")
+  logoUrl               String    @default("")
+  slogan                String    @default("Ươm mầm tri thức - Vững bước tương lai")
+  academicYear          String    @default("2026-2027")
+  currentSemester       String    @default("HK1_2026")
+  semesterStartDate     DateTime?
+  semesterEndDate       DateTime?
+  isGradingLocked       Boolean   @default(false)
+  gradingDeadline       DateTime?
+  minPassingScore       Float     @default(5.0)
+  gradeScaleType        String    @default("10")
+  maintenanceMode       Boolean   @default(false)
+  sessionTimeoutMinutes Int       @default(60)
+  allowRegistration     Boolean   @default(false)
+  extraConfigs          Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String?
+  action       String
+  resourceType String
+  resourceId   String?
+  oldValue     Json?
+  newValue     Json?
+  reason       String?
+  ipAddress    String?
+  userAgent    String?
+  severity     String   @default("info")
+  createdAt    DateTime @default(now())
+  user         User?    @relation(fields: [userId], references: [id], onUpdate: NoAction)
+}
+
+model GradingWindow {
+  id           String     @id @default(uuid())
+  schoolYearId String
+  semester     String
+  status       String     @default("open")
+  startDate    DateTime?
+  endDate      DateTime?
+  lockDate     DateTime?
+  notes        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @default(now())
+  SchoolYear   SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([schoolYearId, semester])
+}
+
+model GuardianLink {
+  id                 String   @id @default(uuid())
+  parentId           String
+  studentId          String
+  relationshipType   String   @default("father")
+  custodyType        String   @default("full")
+  accessGrades       Boolean  @default(true)
+  accessFinances     Boolean  @default(true)
+  isEmergencyContact Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now())
+  Parent             Parent   @relation(fields: [parentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Student            Student  @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([parentId, studentId])
+}
+
+model HomeroomAssignment {
+  id           String     @id @default(uuid())
+  teacherId    String
+  classId      String
+  schoolYearId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @default(now())
+  Class        Class      @relation(fields: [classId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  SchoolYear   SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Teacher      Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([classId, schoolYearId], map: "HomeroomAssignment_class_school_key")
+}
+
+model Parent {
+  id           String         @id @default(uuid())
+  userId       String         @unique
+  fullName     String
+  phone        String?
+  email        String?
+  address      String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @default(now())
+  GuardianLink GuardianLink[]
+  User         User           @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model Permission {
+  id             String           @id @default(uuid())
+  name           String           @unique
+  action         String
+  resourceType   String
+  displayName    String
+  description    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @default(now())
+  RolePermission RolePermission[]
+}
+
+model Role {
+  id             String           @id @default(uuid())
+  name           String           @unique
+  displayName    String
+  description    String?
+  isSystem       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @default(now())
+  RolePermission RolePermission[]
+  UserRole       UserRole[]
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+  Permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([roleId, permissionId])
+}
+
+model SchoolYear {
+  id                 String               @id @default(uuid())
+  code               String               @unique
+  name               String
+  startDate          DateTime
+  endDate            DateTime
+  isCurrent          Boolean              @default(false)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @default(now())
+  GradingWindow      GradingWindow[]
+  HomeroomAssignment HomeroomAssignment[]
+  TeacherAssignment  TeacherAssignment[]
+}
+
+model TeacherAssignment {
+  id           String     @id @default(uuid())
+  teacherId    String
+  classId      String
+  subjectId    String
+  schoolYearId String
+  semester     String     @default("All")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @default(now())
+  Class        Class      @relation(fields: [classId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  SchoolYear   SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Subject      Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Teacher      Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([teacherId, classId, subjectId, schoolYearId, semester], map: "TeacherAssignment_all_key")
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String
+  roleId    String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now())
+  Role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([userId, roleId])
 }
 
 // ==========================================
-// ⚙️ SYSTEM SETTINGS (Cài đặt hệ thống)
+// 🔄 TRANSFER IN MODULE (Tiếp nhận chuyển trường khối 10-11)
 // ==========================================
-model SystemSetting {
-  id                    String   @id @default("default_setting")
-  schoolName            String   @default("Trường THPT TTLN")
-  schoolCode            String   @default("THPT-TTLN")
-  address               String   @default("123 Đường Giáo Dục, TP. Hồ Chí Minh")
-  phone                 String   @default("028.3899.9999")
-  email                 String   @default("contact@thpt-ttln.edu.vn")
-  website               String   @default("https://thpt-ttln.edu.vn")
-  principalName         String   @default("ThS. Nguyễn Văn Quản")
-  logoUrl               String   @default("")
-  slogan                String   @default("Ươm mầm tri thức - Vững bước tương lai")
-  
-  academicYear          String   @default("2026-2027")
-  currentSemester       String   @default("HK1_2026")
-  semesterStartDate     DateTime?
-  semesterEndDate       DateTime?
-  
-  isGradingLocked       Boolean  @default(false)
-  gradingDeadline       DateTime?
-  minPassingScore       Float    @default(5.0)
-  gradeScaleType        String   @default("10") // thang điểm 10
-  
-  maintenanceMode       Boolean  @default(false)
-  sessionTimeoutMinutes Int      @default(60)
-  allowRegistration     Boolean  @default(false)
-  
-  extraConfigs          Json?    // Cấu hình mở rộng dạng JSON
-  
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+model TransferRecord {
+  id                  String        @id @default(uuid())
+  studentId           String
+  student             Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  previousSchoolName  String
+  previousGradeLevel  Int           // Khối 10 hoặc 11
+  targetClassId       String?
+  transferDate        DateTime      @default(now()) @db.Timestamptz
+  reason              String?
+  isCurriculumChanged Boolean       @default(false)
+
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([studentId])
+  @@index([targetClassId])
+}
+
+model MakeupExam {
+  id           String        @id @default(uuid())
+  studentId    String
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subjectName  String
+  examDate     DateTime?     @db.Timestamptz
+  score        Decimal?      @db.Decimal(4, 2)
+  examinerName String?
+  isPassed     Boolean       @default(false)
+  notes        String?
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([studentId])
+  @@index([studentId, subjectName])
+}
+
+model TransferredGrade {
+  id           String        @id @default(uuid())
+  studentId    String
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subjectName  String
+  semester     SemesterType  @default(HK1)
+  finalScore   Decimal       @db.Decimal(4, 2)
+  academicYear String        @default("2026-2027")
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([studentId, subjectName, semester])
+  @@index([studentId])
+}
+
+// ==========================================
+// 🎓 STUDENT PORTAL MODULE (Cổng Thông Tin Học Sinh)
+// ==========================================
+
+model SubjectGradeDetail {
+  id              String               @id @default(uuid())
+  studentId       String
+  subjectId       String
+  semester        String               @default("HK1_2026")
+  academicYear    String               @default("2026-2027")
+  regularScores   Float[]              @default([]) // ĐGtx (Đánh giá thường xuyên: miệng, 15p)
+  midtermScore    Float?               // ĐGgk (Đánh giá giữa kỳ)
+  finalScore      Float?               // ĐGck (Đánh giá cuối kỳ)
+  averageScore    Float?               // ĐTBm (Điểm trung bình môn)
+  isTransferred   Boolean              @default(false) // Môn chuyển tiếp từ trường cũ
+  transferredNote String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  student         Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject         Subject              @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  reviewRequests  GradeReviewRequest[]
+
+  @@unique([studentId, subjectId, semester])
+  @@index([studentId])
+  @@index([subjectId])
+}
+
+enum ReviewRequestStatus {
+  PENDING
+  PROCESSING
+  APPROVED
+  REJECTED
+}
+
+model GradeReviewRequest {
+  id                   String              @id @default(uuid())
+  studentId            String
+  subjectGradeDetailId String
+  scoreComponent       String              // "tx" | "gk" | "ck"
+  currentScore         Float
+  expectedScore        Float?
+  reason               String
+  evidenceUrl          String?
+  status               ReviewRequestStatus @default(PENDING)
+  responseNote         String?
+  reviewedById         String?
+  reviewedAt           DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  student              Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subjectGradeDetail   SubjectGradeDetail  @relation(fields: [subjectGradeDetailId], references: [id], onDelete: Cascade)
+  reviewedBy           User?               @relation("ReviewedByAdminOrTeacher", fields: [reviewedById], references: [id])
+
+  @@index([studentId])
+  @@index([status])
+}
+
+enum AbsenceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model AbsenceRequest {
+  id            String        @id @default(uuid())
+  studentId     String
+  fromDate      DateTime      @db.Timestamptz
+  toDate        DateTime      @db.Timestamptz
+  session       String        @default("all_day") // "morning" | "afternoon" | "all_day"
+  reason        String
+  attachmentUrl String?
+  status        AbsenceStatus @default(PENDING)
+  reviewedById  String?
+  reviewNote    String?
+  reviewedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  student       Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  reviewedBy    User?         @relation("ReviewedAbsence", fields: [reviewedById], references: [id])
+
+  @@index([studentId])
+  @@index([status])
+}
+
+model SubjectCombination {
+  id            String                     @id @default(uuid())
+  code          String                     @unique // Vd: "KHTN-01", "KHXH-01"
+  name          String                     // Tên tổ hợp
+  description   String?
+  subjectsList  String[]                   // Danh sách các môn thành phần
+  capacity      Int                        @default(45)
+  gradeLevel    Int                        @default(10)
+  academicYear  String                     @default("2026-2027")
+  isOpen        Boolean                    @default(true)
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+  registrations SubjectGroupRegistration[]
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model SubjectGroupRegistration {
+  id              String             @id @default(uuid())
+  studentId       String             @unique
+  firstChoiceId   String
+  secondChoiceId  String
+  thirdChoiceId   String?
+  status          RegistrationStatus @default(PENDING)
+  assignedClassId String?
+  note            String?
+  submittedAt     DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  student         Student            @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  firstChoice     SubjectCombination @relation(fields: [firstChoiceId], references: [id])
+  assignedClass   Class?             @relation(fields: [assignedClassId], references: [id])
+
+  @@index([studentId])
+  @@index([status])
 }
 

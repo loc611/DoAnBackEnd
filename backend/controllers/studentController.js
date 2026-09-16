@@ -15,8 +15,8 @@ export const getStudents = async (req, res) => {
             const student = await prisma.student.findFirst({
                 where: { userId: req.user.id },
                 include: {
-                    user: { select: { email: true, status: true } },
-                    class: { select: { className: true } }
+                    user: { select: { username: true, email: true, status: true } },
+                    class: { select: { className: true, grade: true } }
                 }
             });
             return res.json(student ? [student] : []);
@@ -24,8 +24,8 @@ export const getStudents = async (req, res) => {
         
         const students = await prisma.student.findMany({
             include: {
-                user: { select: { email: true, status: true } },
-                class: { select: { className: true } }
+                user: { select: { username: true, email: true, status: true } },
+                class: { select: { className: true, grade: true } }
             },
             orderBy: { createdAt: 'desc' }
         });
@@ -163,7 +163,7 @@ export const createStudent = async (req, res) => {
             return res.status(400).json({ message: 'Tài khoản cho mã học sinh này đã tồn tại' });
         }
 
-        const defaultPassword = req.body.password || `${studentCode}@123`;
+        const defaultPassword = req.body.password || '1111';
         const hashedPassword = await bcrypt.hash(defaultPassword, 10);
 
         const newStudent = await prisma.$transaction(async (tx) => {
@@ -212,7 +212,19 @@ export const createStudent = async (req, res) => {
 
 export const updateStudent = async (req, res) => {
     try {
-        let { studentCode, fullName, gender, classId, phone, parentPhone, status } = req.body;
+        let { 
+            studentCode, 
+            fullName, 
+            gender, 
+            classId, 
+            phone, 
+            parentName,
+            parentPhone, 
+            status,
+            dateOfBirth,
+            academicYear,
+            email 
+        } = req.body;
 
         const student = await prisma.student.findUnique({ 
             where: { id: req.params.id },
@@ -222,17 +234,34 @@ export const updateStudent = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy học sinh' });
         }
 
-        // Validate mã học sinh nếu có thay đổi
-        if (studentCode !== undefined && studentCode.trim()) {
-            studentCode = studentCode.trim().toUpperCase();
-            if (!isValidStudentCode(studentCode)) {
-                return res.status(400).json({ 
-                    message: 'Mã học sinh không đúng định dạng (phải bắt đầu bằng HS và theo sau là các chữ số, VD: HS123456)' 
-                });
+        // Quy tắc bất biến: Tuyệt đối không cho phép sửa mã học sinh
+        if (studentCode !== undefined && studentCode !== null && studentCode !== '') {
+            const normalizedCode = String(studentCode).trim().toUpperCase();
+            if (normalizedCode !== student.studentCode) {
+                return res.status(400).json({ message: 'Mã học sinh là trường bất biến, không thể thay đổi' });
             }
-            const codeTaken = await isStudentCodeTaken(prisma, studentCode, req.params.id);
-            if (codeTaken) {
-                return res.status(400).json({ message: 'Mã học sinh đã tồn tại ở học sinh khác' });
+        }
+
+        // Validate Email nếu có cập nhật
+        if (email !== undefined && email !== null && email !== '' && student.userId) {
+            email = String(email).trim().toLowerCase();
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                return res.status(400).json({ message: 'Email không đúng định dạng' });
+            }
+            const emailExists = await prisma.user.findFirst({
+                where: { email, NOT: { id: student.userId } }
+            });
+            if (emailExists) {
+                return res.status(400).json({ message: 'Email này đã được sử dụng bởi tài khoản khác' });
+            }
+        }
+
+        // Validate Trạng thái tài khoản nếu có
+        const allowedStatuses = ['active', 'suspended', 'withdrawn', 'blocked', 'inactive'];
+        if (status !== undefined && status !== null && status !== '') {
+            if (!allowedStatuses.includes(status)) {
+                return res.status(400).json({ message: 'Trạng thái tài khoản không hợp lệ' });
             }
         }
 
@@ -251,35 +280,56 @@ export const updateStudent = async (req, res) => {
             }
         }
 
-        // Validate SĐT phụ huynh nếu có
+        // Validate SĐT phụ huynh (SĐT liên hệ khẩn cấp) nếu có
         if (parentPhone !== undefined && parentPhone !== null && parentPhone !== '') {
             parentPhone = String(parentPhone).trim();
             if (!isValidPhoneNumber(parentPhone)) {
-                return res.status(400).json({ message: 'SĐT phụ huynh phải gồm đúng 10 chữ số, bắt đầu bằng 0' });
+                return res.status(400).json({ message: 'SĐT phụ huynh (liên hệ khẩn cấp) phải gồm đúng 10 chữ số, bắt đầu bằng 0' });
+            }
+        }
+
+        // Validate Ngày sinh
+        let parsedDob = undefined;
+        if (dateOfBirth !== undefined) {
+            if (dateOfBirth === '' || dateOfBirth === null) {
+                parsedDob = null;
+            } else {
+                const d = new Date(dateOfBirth);
+                if (isNaN(d.getTime())) {
+                    return res.status(400).json({ message: 'Ngày sinh không hợp lệ' });
+                }
+                parsedDob = d;
             }
         }
 
         const updatedStudent = await prisma.$transaction(async (tx) => {
-            if (status && student.userId) {
-                await tx.user.update({
-                    where: { id: student.userId },
-                    data: { status }
-                });
+            if (student.userId) {
+                const userUpdateData = {};
+                if (status && status !== student.user?.status) userUpdateData.status = status;
+                if (email && email !== student.user?.email) userUpdateData.email = email;
+                if (Object.keys(userUpdateData).length > 0) {
+                    await tx.user.update({
+                        where: { id: student.userId },
+                        data: userUpdateData
+                    });
+                }
             }
 
             return await tx.student.update({
                 where: { id: req.params.id },
                 data: {
-                    studentCode: studentCode || undefined,
                     fullName: fullName !== undefined ? fullName.trim() : undefined,
-                    gender: gender || undefined,
+                    gender: gender !== undefined ? gender : undefined,
+                    dateOfBirth: parsedDob,
+                    parentName: parentName !== undefined ? (parentName === '' ? null : parentName.trim()) : undefined,
+                    parentPhone: parentPhone !== undefined ? (parentPhone === '' ? null : parentPhone) : undefined,
+                    academicYear: academicYear !== undefined ? (academicYear === '' ? null : academicYear.trim()) : undefined,
                     classId: classId !== undefined ? (classId === '' ? null : classId) : undefined,
-                    phone: phone !== undefined ? (phone === '' ? null : phone) : undefined,
-                    parentPhone: parentPhone !== undefined ? (parentPhone === '' ? null : parentPhone) : undefined
+                    phone: phone !== undefined ? (phone === '' ? null : phone) : undefined
                 },
                 include: {
-                    user: { select: { email: true, status: true } },
-                    class: { select: { className: true } }
+                    user: { select: { username: true, email: true, status: true } },
+                    class: { select: { className: true, grade: true } }
                 }
             });
         });
@@ -291,7 +341,7 @@ export const updateStudent = async (req, res) => {
 
         res.json(updatedStudent);
     } catch (error) {
-        console.error(error);
+        console.error('Update Student Error:', error);
         res.status(500).json({ message: error.message || 'Lỗi server khi cập nhật' });
     }
 };

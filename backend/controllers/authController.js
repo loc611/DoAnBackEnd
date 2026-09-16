@@ -27,7 +27,11 @@ export const login = async (req, res) => {
                 },
                 include: {
                     admin: true,
-                    teacher: true,
+                    teacher: {
+                        include: {
+                            homeroomClasses: true
+                        }
+                    },
                     student: true
                 }
             });
@@ -98,10 +102,10 @@ export const login = async (req, res) => {
                     } catch (e2) {}
                 }
             }
-            // B. Tài khoản Giáo viên: gv001 - gv011 + teacher123
-            else if (lowerId.startsWith('gv') && inputPassword === 'teacher123') {
+            // B. Tài khoản Giáo viên: gv001 - gv011 + 1111
+            else if (lowerId.startsWith('gv') && inputPassword === '1111') {
                 try {
-                    const teacherPassHash = await bcrypt.hash('teacher123', 10);
+                    const teacherPassHash = await bcrypt.hash('1111', 10);
                     if (user) {
                         user = await prisma.user.update({
                             where: { id: user.id },
@@ -112,10 +116,10 @@ export const login = async (req, res) => {
                     }
                 } catch (tErr) {}
             }
-            // C. Tài khoản Học sinh: hs001 / hs001@school.edu.vn / student@school.edu.vn + student123
-            else if ((lowerId === 'hs001' || lowerId === 'hs001@school.edu.vn' || lowerId === 'student@school.edu.vn') && inputPassword === 'student123') {
+            // C. Tài khoản Học sinh: hs001 / hs001@school.edu.vn / student@school.edu.vn + 1111
+            else if ((lowerId === 'hs001' || lowerId === 'hs001@school.edu.vn' || lowerId === 'student@school.edu.vn') && inputPassword === '1111') {
                 try {
-                    const studentPassHash = await bcrypt.hash('student123', 10);
+                    const studentPassHash = await bcrypt.hash('1111', 10);
                     if (user) {
                         user = await prisma.user.update({
                             where: { id: user.id },
@@ -140,12 +144,19 @@ export const login = async (req, res) => {
             return res.status(403).json({ message: 'Tài khoản của bạn đang trong thời gian ĐÌNH CHỈ hoạt động. Vui lòng liên hệ ban giám hiệu.' });
         }
 
+        if (user.status === 'withdrawn') {
+            return res.status(403).json({ message: 'Tài khoản này đã ngưng hoạt động do học sinh đã thôi học. Vui lòng liên hệ ban giám hiệu.' });
+        }
+
         const profile = user.admin || user.teacher || user.student;
         const primaryRole = user.role || (user.admin ? 'admin' : (user.teacher ? 'teacher' : 'student'));
         const jwtSecret = process.env.JWT_SECRET || 'supersecretkey_for_dev_only';
         
+        const studentId = user.student ? user.student.id : null;
+        const studentClassId = user.student ? user.student.classId : null;
+
         const token = jwt.sign(
-            { id: user.id, role: primaryRole },
+            { id: user.id, role: primaryRole, studentId, classId: studentClassId },
             jwtSecret,
             { expiresIn: '1d' }
         );
@@ -227,6 +238,10 @@ export const getMe = async (req, res) => {
 
         if (user.status === 'suspended') {
             return res.status(403).json({ message: 'Tài khoản đang bị đình chỉ' });
+        }
+
+        if (user.status === 'withdrawn') {
+            return res.status(403).json({ message: 'Tài khoản đã ngưng hoạt động do học sinh đã thôi học' });
         }
 
         let profile = user.admin || user.teacher || user.student;

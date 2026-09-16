@@ -42,6 +42,7 @@ import {
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import StudentDashboard from '../components/student/StudentDashboard';
 
 ChartJS.register(
   CategoryScale,
@@ -106,7 +107,13 @@ const BentoStatCard = ({ title, value, icon: Icon, gradient, badgeText, badgeTyp
 };
 
 const Dashboard = () => {
-  const userRole = localStorage.getItem('userRole') || 'student';
+  const userRole = (localStorage.getItem('userRole') || 'student').toLowerCase();
+  
+  // Phân hệ học sinh: Trực tiếp hiển thị Student Dashboard chuyên dụng
+  if (userRole === 'student') {
+    return <StudentDashboard />;
+  }
+
   const userData = JSON.parse(localStorage.getItem('userData') || '{}');
   const { theme } = useTheme();
   const isDark = theme === 'dark';

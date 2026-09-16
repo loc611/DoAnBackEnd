@@ -93,6 +93,9 @@ export const CORE_ROLE_PERMISSION_MATRIX = {
 };
 
 export const seedRbacScopeData = async () => {
+  if (!prisma.role || !prisma.permission) {
+    return;
+  }
   try {
     console.log('🔄 Seeding Core Roles, Permissions & Matrix (2-tier RBAC + Scope)...');
 

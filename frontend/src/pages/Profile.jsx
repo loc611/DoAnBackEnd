@@ -46,10 +46,18 @@ const Profile = () => {
 
     try {
       setUpdatingPassword(true);
-      await api.patch(`/users/${userData.id}/reset-password`, {
-        newPassword: passwordForm.newPassword
-      });
-      Swal.fire('Thành công', 'Đổi mật khẩu thành công!', 'success');
+      if (userRole === 'student') {
+        const res = await api.put('/student/change-password', {
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword
+        });
+        Swal.fire('Thành công', res.data?.message || 'Đổi mật khẩu thành công!', 'success');
+      } else {
+        await api.patch(`/users/${userData.id}/reset-password`, {
+          newPassword: passwordForm.newPassword
+        });
+        Swal.fire('Thành công', 'Đổi mật khẩu thành công!', 'success');
+      }
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (err) {
       console.error(err);
@@ -176,10 +184,26 @@ const Profile = () => {
               Đổi mật khẩu
             </h2>
             <form onSubmit={handlePasswordChange} className="space-y-4">
+              {userRole === 'student' && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Mật khẩu hiện tại</label>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={passwordForm.currentPassword}
+                    onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                    required
+                    placeholder="Nhập mật khẩu hiện tại"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Mật khẩu mới</label>
                 <input
                   type="password"
+                  autoComplete="new-password"
                   value={passwordForm.newPassword}
                   onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
                   required
@@ -192,6 +216,7 @@ const Profile = () => {
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Xác nhận mật khẩu</label>
                 <input
                   type="password"
+                  autoComplete="new-password"
                   value={passwordForm.confirmPassword}
                   onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
                   required

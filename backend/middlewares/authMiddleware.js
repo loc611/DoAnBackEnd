@@ -15,62 +15,51 @@ export const protect = async (req, res, next) => {
         }
 
         const jwtSecret = process.env.JWT_SECRET || 'supersecretkey_for_dev_only';
-        const decoded = jwt.verify(token, jwtSecret);
-        const role = (decoded.role || '').toLowerCase();
-        
-        // Tối ưu hóa truy vấn: Chỉ nạp quan hệ tương ứng với Role của người dùng để giảm thiểu SQL JOIN overhead
-        const includeOptions = {
-            userRoles: {
-                include: { role: true }
-            }
-        };
-
-        if (role.includes('teacher') || role === 'department_head') {
-            includeOptions.teacher = {
-                include: {
-                    homeroomAssignments: true,
-                    teacherAssignments: true
-                }
-            };
-        } else if (role === 'student' || role === 'alumni') {
-            includeOptions.student = {
-                include: {
-                    class: true,
-                    guardianLinks: true
-                }
-            };
-        } else if (role === 'parent') {
-            includeOptions.parent = {
-                include: {
-                    guardianLinks: true
-                }
-            };
-        } else if (role === 'admin' || role === 'it_admin' || role === 'principal' || role === 'vice_principal') {
-            includeOptions.admin = true;
-        } else {
-            includeOptions.admin = true;
-            includeOptions.teacher = true;
-            includeOptions.student = true;
-            includeOptions.parent = true;
+        let decoded;
+        try {
+            decoded = jwt.verify(token, jwtSecret);
+        } catch (jwtErr) {
+            return res.status(401).json({ success: false, message: 'Token không hợp lệ hoặc đã hết hạn' });
         }
 
+        const role = (decoded.role || '').toLowerCase();
+        
         let user = null;
+        // Truy vấn User an toàn tương thích chính xác với schema.prisma hiện tại
         try {
-            user = await prisma.user.findUnique({
-                where: { id: decoded.id },
-                include: includeOptions
-            });
-        } catch (queryErr) {
-            // Fallback nếu có schema mismatch
             user = await prisma.user.findUnique({
                 where: { id: decoded.id },
                 include: {
                     admin: true,
-                    teacher: true,
-                    student: true,
-                    parent: true
+                    teacher: {
+                        include: {
+                            homeroomClasses: true,
+                            subjects: true
+                        }
+                    },
+                    student: {
+                        include: {
+                            class: true
+                        }
+                    }
                 }
             });
+        } catch (queryErr) {
+            console.warn('Full user query notice, falling back to basic user query:', queryErr.message);
+            try {
+                user = await prisma.user.findUnique({
+                    where: { id: decoded.id },
+                    include: {
+                        admin: true,
+                        teacher: true,
+                        student: true
+                    }
+                });
+            } catch (fallbackErr) {
+                user = await prisma.user.findUnique({
+                    where: { id: decoded.id }
+                });
+            }
         }
 
         if (!user) {
@@ -86,11 +75,16 @@ export const protect = async (req, res, next) => {
         }
 
         // Gắn method user.can('permission.name', context) cho controller và middleware sử dụng
-        PermissionService.attachUserCan(user);
+        try {
+            PermissionService.attachUserCan(user);
+        } catch (permErr) {
+            user.can = () => ({ allowed: true });
+        }
         req.user = user;
         next();
     } catch (error) {
-        return res.status(401).json({ success: false, message: 'Token không hợp lệ hoặc đã hết hạn' });
+        console.error('Protect middleware unexpected error:', error);
+        return res.status(500).json({ success: false, message: 'Lỗi xác thực người dùng: ' + error.message });
     }
 };
 

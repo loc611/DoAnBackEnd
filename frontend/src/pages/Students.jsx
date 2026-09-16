@@ -3,13 +3,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, Plus, Edit, Trash2, X, Eye, 
   FileSpreadsheet, Download, Upload, Settings, 
-  Copy, Check, ExternalLink, RefreshCw, HelpCircle, CheckCircle2, AlertCircle
+  Copy, Check, ExternalLink, RefreshCw, HelpCircle, CheckCircle2, AlertCircle,
+  Lock, Calendar, Users, PhoneCall, GraduationCap
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import Swal from 'sweetalert2';
 import { generateStudentCode } from '../utils/codeGenerator';
-import { isValidPhoneNumber, sanitizePhoneNumber, PHONE_ERROR_MESSAGES } from '../utils/phoneValidation';
+import { isValidPhoneNumber, sanitizePhoneNumber, PHONE_ERROR_MESSAGES, PHONE_10_DIGITS_REGEX } from '../utils/phoneValidation';
 
 // Modal Thêm / Sửa học sinh thủ công
 const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
@@ -19,7 +20,10 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
     gender: 'Nam',
     classId: '',
     phone: '',
+    dateOfBirth: '',
+    parentName: '',
     parentPhone: '',
+    academicYear: '',
     status: 'active'
   });
   const [errors, setErrors] = useState({});
@@ -32,7 +36,10 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
         gender: student.gender || 'Nam',
         classId: student.classId || '',
         phone: student.phone || '',
+        dateOfBirth: student.dateOfBirth ? String(student.dateOfBirth).slice(0, 10) : '',
+        parentName: student.parentName || '',
         parentPhone: student.parentPhone || '',
+        academicYear: student.academicYear || '',
         status: student.user?.status || 'active'
       });
     } else {
@@ -42,7 +49,10 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
         gender: 'Nam',
         classId: '',
         phone: '',
+        dateOfBirth: '',
+        parentName: '',
         parentPhone: '',
+        academicYear: '',
         status: 'active'
       });
     }
@@ -55,9 +65,10 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
       value = sanitizePhoneNumber(value);
       const newErrors = { ...errors };
       if (!value) {
-        newErrors[name] = name === 'phone' ? PHONE_ERROR_MESSAGES.REQUIRED : PHONE_ERROR_MESSAGES.PARENT_REQUIRED;
+        if (name === 'phone') newErrors.phone = PHONE_ERROR_MESSAGES.REQUIRED;
+        else delete newErrors.parentPhone;
       } else if (!isValidPhoneNumber(value)) {
-        newErrors[name] = name === 'phone' ? PHONE_ERROR_MESSAGES.INVALID : PHONE_ERROR_MESSAGES.PARENT_INVALID;
+        newErrors[name] = name === 'phone' ? PHONE_ERROR_MESSAGES.INVALID : 'SĐT phụ huynh phải gồm đúng 10 chữ số, bắt đầu bằng 0';
       } else {
         delete newErrors[name];
       }
@@ -75,10 +86,8 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
       newErrors.phone = PHONE_ERROR_MESSAGES.INVALID;
     }
 
-    if (!formData.parentPhone) {
-      newErrors.parentPhone = PHONE_ERROR_MESSAGES.PARENT_REQUIRED;
-    } else if (!isValidPhoneNumber(formData.parentPhone)) {
-      newErrors.parentPhone = PHONE_ERROR_MESSAGES.PARENT_INVALID;
+    if (formData.parentPhone && !isValidPhoneNumber(formData.parentPhone)) {
+      newErrors.parentPhone = 'SĐT phụ huynh phải gồm đúng 10 chữ số, bắt đầu bằng 0';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -92,109 +101,201 @@ const StudentModal = ({ isOpen, onClose, student, classesList, onSubmit }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
+        initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden"
+        exit={{ opacity: 0, scale: 0.96 }}
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto border border-slate-200 flex flex-col"
       >
-        <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50/50">
-          <h2 className="text-xl font-bold text-gray-800">
-            {student ? 'Sửa thông tin Học sinh' : 'Thêm Học sinh mới'}
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100">
-            <X size={24} />
+        <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-blue-50/40 sticky top-0 z-10 backdrop-blur-md">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-800">
+                {student ? 'Cập nhật Hồ sơ Học sinh' : 'Thêm Học sinh mới'}
+              </h2>
+              {student && (
+                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold uppercase bg-blue-100 text-blue-700 border border-blue-200 font-mono">
+                  {student.studentCode}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {student ? 'Quản lý thông tin cá nhân, liên hệ và niên khóa của học sinh' : 'Đăng ký hồ sơ học sinh mới vào cơ sở dữ liệu'}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors p-2 rounded-xl hover:bg-white shadow-xs cursor-pointer">
+            <X size={20} />
           </button>
         </div>
         
-        <form className="p-6" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Họ và tên *</label>
-              <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} required className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nhập họ tên..." />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Mã học sinh (Tự động) *</label>
-              <input type="text" name="studentCode" value={formData.studentCode} readOnly required className="w-full px-4 py-2 rounded-lg border border-gray-200 bg-gray-100 font-mono font-semibold text-blue-600 outline-none cursor-not-allowed" />
+        <form className="p-6 md:p-8 font-sans space-y-6" onSubmit={handleSubmit}>
+          {/* SECTION 1: Thông tin học sinh */}
+          <div className="bg-slate-50/60 p-5 rounded-2xl border border-slate-200/80">
+            <div className="flex items-center gap-2 text-blue-700 font-bold text-sm mb-4 pb-2 border-b border-slate-200/60">
+              <GraduationCap size={18} />
+              <span>1. Thông tin Định danh & Học vụ</span>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Giới tính</label>
-              <select name="gender" value={formData.gender} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
-                <option value="Nam">Nam</option>
-                <option value="Nữ">Nữ</option>
-                <option value="Khác">Khác</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Lớp học</label>
-              <select name="classId" value={formData.classId} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
-                <option value="">-- Chưa có lớp --</option>
-                {classesList.map((c, cIdx) => (
-                  <option key={c.id || `class-opt-${cIdx}`} value={c.id}>{c.className} (Khối {c.grade})</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Số điện thoại HS *</label>
-              <input 
-                type="tel" 
-                name="phone" 
-                value={formData.phone} 
-                onChange={handleChange} 
-                placeholder="VD: 0912345678" 
-                maxLength={10}
-                className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors ${
-                  errors.phone ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
-                }`}
-              />
-              {errors.phone && (
-                <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
-                  <span>⚠️</span> {errors.phone}
-                </p>
-              )}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Số ĐT Phụ huynh *</label>
-              <input 
-                type="tel" 
-                name="parentPhone" 
-                value={formData.parentPhone} 
-                onChange={handleChange} 
-                placeholder="VD: 0987654321" 
-                maxLength={10}
-                className={`w-full px-4 py-2 rounded-lg border outline-none transition-colors ${
-                  errors.parentPhone ? 'border-red-500 focus:ring-2 focus:ring-red-200 bg-red-50/20' : 'border-gray-200 focus:ring-2 focus:ring-blue-500'
-                }`}
-              />
-              {errors.parentPhone && (
-                <p className="text-red-500 text-xs mt-1.5 font-medium flex items-center gap-1">
-                  <span>⚠️</span> {errors.parentPhone}
-                </p>
-              )}
-            </div>
-
-            {student && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Trạng thái tài khoản</label>
-                <select name="status" value={formData.status} onChange={handleChange} className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none">
-                  <option value="active">Hoạt động</option>
-                  <option value="inactive">Bị khóa</option>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Họ và tên học sinh *</label>
+                <input 
+                  type="text" 
+                  name="fullName" 
+                  value={formData.fullName} 
+                  onChange={handleChange} 
+                  required 
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-medium" 
+                  placeholder="VD: Nguyễn Văn A" 
+                />
+              </div>
+              
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Mã học sinh (Bất biến) *</label>
+                  {student && (
+                    <span className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5">
+                      <Lock size={11} /> Không thể sửa
+                    </span>
+                  )}
+                </div>
+                <div className="relative flex items-center">
+                  <input 
+                    type="text" 
+                    name="studentCode" 
+                    value={formData.studentCode} 
+                    readOnly 
+                    required 
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-100 font-mono font-bold text-blue-600 outline-none cursor-not-allowed text-sm pl-9 select-all" 
+                  />
+                  <Lock size={15} className="absolute left-3 text-blue-400" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Ngày sinh</label>
+                <input 
+                  type="date" 
+                  name="dateOfBirth" 
+                  value={formData.dateOfBirth} 
+                  onChange={handleChange} 
+                  max={new Date().toISOString().split('T')[0]}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-medium text-slate-700 bg-white" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Giới tính</label>
+                <select name="gender" value={formData.gender} onChange={handleChange} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-medium text-slate-700 bg-white">
+                  <option value="Nam">Nam</option>
+                  <option value="Nữ">Nữ</option>
+                  <option value="Khác">Khác</option>
                 </select>
               </div>
-            )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Lớp học</label>
+                <select name="classId" value={formData.classId} onChange={handleChange} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-medium text-slate-700 bg-white">
+                  <option value="">-- Chưa xếp lớp --</option>
+                  {classesList.map((c, cIdx) => (
+                    <option key={c.id || `class-opt-${cIdx}`} value={c.id}>{c.className} (Khối {c.grade})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Năm học / Niên khóa</label>
+                <input 
+                  type="text" 
+                  name="academicYear" 
+                  value={formData.academicYear} 
+                  onChange={handleChange} 
+                  placeholder="VD: 2024-2027 hoặc K24" 
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-medium text-slate-700" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Số điện thoại cá nhân HS *</label>
+                <input 
+                  type="tel" 
+                  name="phone" 
+                  value={formData.phone} 
+                  onChange={handleChange} 
+                  placeholder="VD: 0912345678" 
+                  maxLength={10}
+                  className={`w-full px-3.5 py-2 rounded-xl border outline-none text-sm font-medium ${
+                    errors.phone ? 'border-rose-500 bg-rose-50/20' : 'border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100'
+                  }`}
+                />
+                {errors.phone && (
+                  <p className="text-rose-500 text-xs mt-1 font-medium">{errors.phone}</p>
+                )}
+              </div>
+
+              {student && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Trạng thái tài khoản</label>
+                  <select name="status" value={formData.status} onChange={handleChange} className="w-full px-3.5 py-2 rounded-xl border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-bold text-slate-800 bg-white">
+                    <option value="active">🟢 Hoạt động</option>
+                    <option value="suspended">🟡 Tạm khóa (Đình chỉ)</option>
+                    <option value="withdrawn">🟠 Đã thôi học</option>
+                    <option value="blocked">🔴 Khóa hoàn toàn</option>
+                  </select>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="mt-8 flex justify-end space-x-3">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors font-medium">
+          {/* SECTION 2: Thông tin phụ huynh */}
+          <div className="bg-amber-50/40 p-5 rounded-2xl border border-amber-200/70">
+            <div className="flex items-center gap-2 text-amber-800 font-bold text-sm mb-4 pb-2 border-b border-amber-200/50">
+              <Users size={18} />
+              <span>2. Thông tin Phụ huynh & Liên hệ Khẩn cấp</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Họ và tên Phụ huynh / Người giám hộ</label>
+                <input 
+                  type="text" 
+                  name="parentName" 
+                  value={formData.parentName} 
+                  onChange={handleChange} 
+                  placeholder="VD: Trần Văn Phụ Huynh"
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 bg-white outline-none text-sm font-medium focus:border-amber-500 focus:ring-2 focus:ring-amber-100" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">SĐT Phụ huynh (Liên hệ khẩn cấp)</label>
+                <div className="relative flex items-center">
+                  <input 
+                    type="tel" 
+                    name="parentPhone" 
+                    value={formData.parentPhone} 
+                    onChange={handleChange} 
+                    placeholder="VD: 0988123456" 
+                    maxLength={10}
+                    className={`w-full px-3.5 py-2 rounded-xl border bg-white outline-none text-sm font-medium pl-9 ${
+                      errors.parentPhone ? 'border-rose-500 bg-rose-50/20' : 'border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-100'
+                    }`}
+                  />
+                  <PhoneCall size={15} className="absolute left-3 text-amber-600" />
+                </div>
+                {errors.parentPhone && (
+                  <p className="text-rose-500 text-xs mt-1 font-medium">{errors.parentPhone}</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end items-center gap-3 pt-4 border-t border-slate-100">
+            <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors font-semibold text-sm cursor-pointer">
               Hủy bỏ
             </button>
-            <button type="submit" className="btn-primary px-5 py-2.5">
+            <button type="submit" className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-600/20 transition-all cursor-pointer">
               Lưu thông tin
             </button>
           </div>

@@ -2,17 +2,17 @@ import prisma from '../prismaClient.js';
 import bcrypt from 'bcryptjs';
 
 const DEFAULT_TEACHERS = [
-    { username: 'gv001', email: 'gv001@school.edu.vn', teacherCode: 'GV001', fullName: 'Nguyễn Văn Giáo Viên', phone: '0977777771', specialization: 'Toán Học' },
-    { username: 'gv002', email: 'gv002@school.edu.vn', teacherCode: 'GV002', fullName: 'Trần Thị Mai', phone: '0977777772', specialization: 'Ngữ Văn' },
-    { username: 'gv003', email: 'gv003@school.edu.vn', teacherCode: 'GV003', fullName: 'Lê Hoàng Anh', phone: '0977777773', specialization: 'Tiếng Anh' },
-    { username: 'gv004', email: 'gv004@school.edu.vn', teacherCode: 'GV004', fullName: 'Phạm Minh Đức', phone: '0977777774', specialization: 'Vật Lý' },
-    { username: 'gv005', email: 'gv005@school.edu.vn', teacherCode: 'GV005', fullName: 'Hoàng Thu Trang', phone: '0977777775', specialization: 'Hóa Học' },
-    { username: 'gv006', email: 'gv006@school.edu.vn', teacherCode: 'GV006', fullName: 'Vũ Thị Lan', phone: '0977777776', specialization: 'Sinh Học' },
-    { username: 'gv007', email: 'gv007@school.edu.vn', teacherCode: 'GV007', fullName: 'Đỗ Thành Nam', phone: '0977777777', specialization: 'Lịch Sử' },
-    { username: 'gv008', email: 'gv008@school.edu.vn', teacherCode: 'GV008', fullName: 'Bùi Thị Cúc', phone: '0977777778', specialization: 'Địa Lý' },
-    { username: 'gv009', email: 'gv009@school.edu.vn', teacherCode: 'GV009', fullName: 'Ngô Quang Huy', phone: '0977777779', specialization: 'Tin Học' },
-    { username: 'gv010', email: 'gv010@school.edu.vn', teacherCode: 'GV010', fullName: 'Nguyễn Thị Hằng', phone: '0977777780', specialization: 'Giáo Dục Công Dân' },
-    { username: 'gv011', email: 'gv011@school.edu.vn', teacherCode: 'GV011', fullName: 'Đinh Quốc Bảo', phone: '0977777781', specialization: 'Giáo Dục Thể Chất' }
+    { username: 'gv001', email: 'gv001@school.edu.vn', teacherCode: 'GV001', fullName: 'Nguyễn Văn Hiệu Trưởng', phone: '0977777771', specialization: 'Toán Học', position: 'Hiệu trưởng' },
+    { username: 'gv002', email: 'gv002@school.edu.vn', teacherCode: 'GV002', fullName: 'Trần Thị Mai', phone: '0977777772', specialization: 'Ngữ Văn', position: 'Tổ trưởng chuyên môn' },
+    { username: 'gv003', email: 'gv003@school.edu.vn', teacherCode: 'GV003', fullName: 'Lê Hoàng Anh', phone: '0977777773', specialization: 'Tiếng Anh', position: 'Tổ phó chuyên môn' },
+    { username: 'gv004', email: 'gv004@school.edu.vn', teacherCode: 'GV004', fullName: 'Phạm Minh Đức', phone: '0977777774', specialization: 'Vật Lý', position: 'Bí thư Đoàn trường' },
+    { username: 'gv005', email: 'gv005@school.edu.vn', teacherCode: 'GV005', fullName: 'Hoàng Thu Trang', phone: '0977777775', specialization: 'Hóa Học', position: 'Giám thị' },
+    { username: 'gv006', email: 'gv006@school.edu.vn', teacherCode: 'GV006', fullName: 'Vũ Thị Lan', phone: '0977777776', specialization: 'Sinh Học', position: 'Giáo viên bộ môn' },
+    { username: 'gv007', email: 'gv007@school.edu.vn', teacherCode: 'GV007', fullName: 'Đỗ Thành Nam', phone: '0977777777', specialization: 'Lịch Sử', position: 'Giáo viên bộ môn' },
+    { username: 'gv008', email: 'gv008@school.edu.vn', teacherCode: 'GV008', fullName: 'Bùi Thị Cúc', phone: '0977777778', specialization: 'Địa Lý', position: 'Giáo viên bộ môn' },
+    { username: 'gv009', email: 'gv009@school.edu.vn', teacherCode: 'GV009', fullName: 'Ngô Quang Huy', phone: '0977777779', specialization: 'Tin Học', position: 'Giáo viên bộ môn' },
+    { username: 'gv010', email: 'gv010@school.edu.vn', teacherCode: 'GV010', fullName: 'Nguyễn Thị Hằng', phone: '0977777780', specialization: 'Giáo Dục Công Dân', position: 'Giáo viên bộ môn' },
+    { username: 'gv011', email: 'gv011@school.edu.vn', teacherCode: 'GV011', fullName: 'Đinh Quốc Bảo', phone: '0977777781', specialization: 'Giáo Dục Thể Chất', position: 'Giáo viên bộ môn' }
 ];
 
 const DEFAULT_SUBJECTS = [
@@ -66,11 +66,13 @@ export const initDefaultUsers = async () => {
                         phone: '0988888888'
                     }
                 });
-                const adminRole = await tx.role.findUnique({ where: { name: 'admin' } });
-                if (adminRole) {
-                    await tx.userRole.create({
-                        data: { userId: createdUser.id, roleId: adminRole.id }
-                    });
+                if (tx.role && tx.userRole) {
+                    const adminRole = await tx.role.findUnique({ where: { name: 'admin' } });
+                    if (adminRole) {
+                        await tx.userRole.create({
+                            data: { userId: createdUser.id, roleId: adminRole.id }
+                        });
+                    }
                 }
             });
             console.log('✅ Default Admin created: admin / admin123 (or admin@school.edu.vn / admin123)');
@@ -92,21 +94,25 @@ export const initDefaultUsers = async () => {
                     status: 'active' 
                 }
             });
-            const adminRole = await prisma.role.findUnique({ where: { name: 'admin' } });
-            if (adminRole) {
-                await prisma.userRole.upsert({
-                    where: { userId_roleId: { userId: adminUser.id, roleId: adminRole.id } },
-                    update: {},
-                    create: { userId: adminUser.id, roleId: adminRole.id }
-                });
+            if (prisma.role && prisma.userRole) {
+                const adminRole = await prisma.role.findUnique({ where: { name: 'admin' } });
+                if (adminRole) {
+                    await prisma.userRole.upsert({
+                        where: { userId_roleId: { userId: adminUser.id, roleId: adminRole.id } },
+                        update: {},
+                        create: { userId: adminUser.id, roleId: adminRole.id }
+                    });
+                }
             }
             console.log('✅ Admin account synced: admin / admin123');
         }
 
         // 2. Check Teachers
-        const teacherPassHash = await bcrypt.hash('teacher123', 10);
-        const teacherRole = await prisma.role.findUnique({ where: { name: 'subject_teacher' } }) ||
-                            await prisma.role.findUnique({ where: { name: 'teacher' } });
+        const teacherPassHash = await bcrypt.hash('1111', 10);
+        const teacherRole = (prisma.role && prisma.userRole)
+            ? (await prisma.role.findUnique({ where: { name: 'subject_teacher' } }) ||
+               await prisma.role.findUnique({ where: { name: 'teacher' } }))
+            : null;
 
         for (const teacherData of DEFAULT_TEACHERS) {
             const existingTeacher = await prisma.teacher.findFirst({
@@ -148,38 +154,78 @@ export const initDefaultUsers = async () => {
                                 teacherCode: teacherData.teacherCode,
                                 fullName: teacherData.fullName,
                                 phone: teacherData.phone,
-                                specialization: teacherData.specialization
+                                specialization: teacherData.specialization,
+                                position: teacherData.position || 'Giáo viên bộ môn'
                             }
                         });
-                        if (teacherRole) {
+                        if (teacherRole && tx.userRole) {
                             await tx.userRole.create({
                                 data: { userId: createdUser.id, roleId: teacherRole.id }
                             });
                         }
                     });
-                    console.log(`✅ Default Teacher created: ${teacherData.teacherCode} - ${teacherData.fullName}`);
+                    console.log(`✅ Default Teacher created: ${teacherData.teacherCode} - ${teacherData.fullName} (${teacherData.position})`);
                 }
-            } else if (existingTeacher.user) {
-                await prisma.user.update({
-                    where: { id: existingTeacher.user.id },
-                    data: {
-                        password: teacherPassHash,
-                        role: 'teacher',
-                        status: 'active'
+            } else {
+                if (existingTeacher.user) {
+                    await prisma.user.update({
+                        where: { id: existingTeacher.user.id },
+                        data: {
+                            password: teacherPassHash,
+                            role: 'teacher',
+                            status: 'active'
+                        }
+                    });
+                    if (teacherRole && prisma.userRole) {
+                        await prisma.userRole.upsert({
+                            where: { userId_roleId: { userId: existingTeacher.user.id, roleId: teacherRole.id } },
+                            update: {},
+                            create: { userId: existingTeacher.user.id, roleId: teacherRole.id }
+                        });
                     }
-                });
-                if (teacherRole) {
-                    await prisma.userRole.upsert({
-                        where: { userId_roleId: { userId: existingTeacher.user.id, roleId: teacherRole.id } },
-                        update: {},
-                        create: { userId: existingTeacher.user.id, roleId: teacherRole.id }
+                }
+                // Đồng bộ cập nhật position cho giáo viên mặc định nếu cần
+                if (teacherData.position && (!existingTeacher.position || existingTeacher.position === 'Giáo viên bộ môn' || existingTeacher.position === 'Trưởng bộ môn' || existingTeacher.position === 'Ban giám hiệu')) {
+                    await prisma.teacher.update({
+                        where: { id: existingTeacher.id },
+                        data: { 
+                            position: teacherData.position,
+                            fullName: teacherData.fullName 
+                        }
                     });
                 }
             }
         }
 
+        // 2.1. Migration tự động cho các chức vụ cũ toàn bộ bảng Teacher
+        try {
+            const legacyTeachers = await prisma.teacher.findMany();
+            for (const t of legacyTeachers) {
+                let targetPos = null;
+                if (!t.position) {
+                    targetPos = 'Giáo viên bộ môn';
+                } else if (t.position === 'Trưởng bộ môn' || t.position === 'Trưởng khoa / Quản khoa' || t.position === 'Trưởng khoa') {
+                    targetPos = 'Tổ trưởng chuyên môn';
+                } else if (t.position === 'Ban giám hiệu') {
+                    targetPos = 'Hiệu trưởng';
+                } else if (t.position === 'Giáo viên chủ nhiệm') {
+                    targetPos = 'Giáo viên bộ môn';
+                }
+
+                if (targetPos && targetPos !== t.position) {
+                    await prisma.teacher.update({
+                        where: { id: t.id },
+                        data: { position: targetPos }
+                    });
+                    console.log(`✨ Đã chuyển đổi chức vụ giáo viên ${t.teacherCode} (${t.fullName}): '${t.position}' -> '${targetPos}'`);
+                }
+            }
+        } catch (migErr) {
+            console.warn('Teacher position migration notice:', migErr.message);
+        }
+
         // 3. Check Student
-        const studentRole = await prisma.role.findUnique({ where: { name: 'student' } });
+        const studentRole = (prisma.role && prisma.userRole) ? await prisma.role.findUnique({ where: { name: 'student' } }) : null;
         const studentUser = await prisma.user.findFirst({
             where: {
                 OR: [
@@ -191,7 +237,7 @@ export const initDefaultUsers = async () => {
             include: { student: true }
         });
 
-        const studentPassHash = await bcrypt.hash('student123', 10);
+        const studentPassHash = await bcrypt.hash('1111', 10);
         if (!studentUser) {
             await prisma.$transaction(async (tx) => {
                 const createdUser = await tx.user.create({
@@ -212,13 +258,13 @@ export const initDefaultUsers = async () => {
                         phone: '0955555555'
                     }
                 });
-                if (studentRole) {
+                if (studentRole && tx.userRole) {
                     await tx.userRole.create({
                         data: { userId: createdUser.id, roleId: studentRole.id }
                     });
                 }
             });
-            console.log('✅ Default Student created: hs001@school.edu.vn / student123');
+            console.log('✅ Default Student created: hs001@school.edu.vn / 1111');
         } else {
             await prisma.user.update({
                 where: { id: studentUser.id },
@@ -229,7 +275,7 @@ export const initDefaultUsers = async () => {
                     status: 'active'
                 }
             });
-            if (studentRole) {
+            if (studentRole && prisma.userRole) {
                 await prisma.userRole.upsert({
                     where: { userId_roleId: { userId: studentUser.id, roleId: studentRole.id } },
                     update: {},

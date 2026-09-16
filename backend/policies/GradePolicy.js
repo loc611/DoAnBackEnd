@@ -79,8 +79,16 @@ class GradePolicy extends BasePolicy {
       return { allowed: false, reason: 'Tài khoản đang trong chế độ nghỉ phép dài hạn. Quyền nhập điểm đã được chuyển cho GV dạy thay' };
     }
 
-    // 4. Kiểm tra vai trò được phép nhập
-    if (['teacher', 'guest_teacher', 'homeroom_teacher', 'department_head'].includes(role)) {
+    // 4. Nếu sổ điểm đang ở trạng thái KHÓA (locked), chỉ cho phép nhập nếu có Cửa sổ mở khóa tạm thời (TTL) còn hiệu lực
+    if (context.isClassLocked && !context.hasActiveUnlock) {
+      return { 
+        allowed: false, 
+        reason: 'Sổ điểm lớp đã bị khóa và niêm phong. Giáo viên vui lòng gửi Yêu cầu mở khóa tới Ban Giám Hiệu nếu cần sửa điểm.' 
+      };
+    }
+
+    // 5. Kiểm tra vai trò được phép nhập
+    if (['teacher', 'guest_teacher', 'homeroom_teacher', 'department_head', 'admin', 'principal', 'vice_principal'].includes(role)) {
       return { allowed: true };
     }
 
@@ -89,31 +97,58 @@ class GradePolicy extends BasePolicy {
 
   /**
    * Kiểm tra quyền Khóa & Công Bố Bảng Điểm (grade.lock_publish)
+   * Theo Thông tư 22/2021/TT-BGDĐT: Thẩm quyền khóa sổ và công bố thuộc về Ban Giám Hiệu (Hiệu trưởng / Phó Hiệu trưởng)
    */
   static canLockPublish(user, context = {}) {
     if (this.isSuperUser(user)) return { allowed: true };
 
     const role = (user.role || '').toLowerCase();
-    if (['teacher', 'homeroom_teacher', 'department_head', 'vice_principal', 'principal'].includes(role)) {
+    if (['admin', 'principal', 'vice_principal', 'academic_affairs'].includes(role)) {
       return { allowed: true };
     }
 
-    return { allowed: false, reason: 'Không có thẩm quyền niêm phong và công bố bảng điểm' };
+    return { 
+      allowed: false, 
+      reason: 'Theo Thông tư 22/2021/TT-BGDĐT, chỉ Ban Giám Hiệu mới có thẩm quyền Khóa sổ điểm và phê duyệt công bố toàn trường.' 
+    };
+  }
+
+  /**
+   * Kiểm tra quyền Gửi Yêu Cầu Mở Khóa Sổ Điểm (grade.request_unlock)
+   */
+  static canRequestUnlock(user, context = {}) {
+    if (this.isSuperUser(user)) return { allowed: true };
+
+    const role = (user.role || '').toLowerCase();
+    if (['teacher', 'guest_teacher', 'homeroom_teacher', 'department_head'].includes(role)) {
+      if (!context.reason || context.reason.trim().length < 5) {
+        return { allowed: false, reason: 'Vui lòng cung cấp lý do điều chỉnh điểm cụ thể (tối thiểu 5 ký tự)' };
+      }
+      return { allowed: true };
+    }
+
+    return { allowed: false, reason: 'Chỉ giáo viên phụ trách mới có quyền gửi yêu cầu mở khóa sửa điểm' };
+  }
+
+  /**
+   * Kiểm tra quyền Phê Duyệt / Mở Khóa Sổ Điểm (grade.approve_unlock / grade.unlock)
+   */
+  static canApproveUnlock(user, context = {}) {
+    if (this.isSuperUser(user)) return { allowed: true };
+
+    const role = (user.role || '').toLowerCase();
+    if (['admin', 'principal', 'vice_principal'].includes(role)) {
+      return { allowed: true };
+    }
+
+    return { allowed: false, reason: 'Chỉ Ban Giám Hiệu mới có quyền phê duyệt yêu cầu mở khóa sổ điểm' };
   }
 
   /**
    * Kiểm tra quyền Mở Khóa Sổ Điểm để chỉnh sửa (grade.unlock)
    */
   static canUnlock(user, context = {}) {
-    if (this.isSuperUser(user)) return { allowed: true };
-
-    const role = (user.role || '').toLowerCase();
-    // Chỉ Trưởng bộ môn, Phó hiệu trưởng hoặc Hiệu trưởng mới có quyền mở khóa sổ điểm đã niêm phong
-    if (['department_head', 'vice_principal', 'principal', 'it_admin'].includes(role)) {
-      return { allowed: true };
-    }
-
-    return { allowed: false, reason: 'Sổ điểm đã khóa chỉ có thể mở lại bởi Trưởng Bộ Môn hoặc Ban Giám Hiệu' };
+    return this.canApproveUnlock(user, context);
   }
 
   /**
@@ -124,7 +159,7 @@ class GradePolicy extends BasePolicy {
     if (this.isSuperUser(user)) return { allowed: true };
 
     const role = (user.role || '').toLowerCase();
-    if (role === 'principal' || role === 'vice_principal') {
+    if (role === 'principal' || role === 'vice_principal' || role === 'admin') {
       if (!context.reason || context.reason.trim().length < 5) {
         return { allowed: false, reason: 'Thao tác đặc cách sửa điểm bắt buộc phải nhập lý do giải trình chi tiết' };
       }

@@ -30,9 +30,12 @@ import {
   ExternalLink,
   HelpCircle,
   CheckCircle2,
-  Clock
+  Clock,
+  Layers
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { useTeacherContext } from '../context/TeacherContext';
+import RoleSwitcher from '../components/RoleSwitcher';
 import api from '../services/api';
 
 const SidebarItem = ({ icon: Icon, label, path, active, expanded, badge }) => (
@@ -84,6 +87,12 @@ const DashboardLayout = () => {
   const userRole = localStorage.getItem('userRole') || 'student';
   const userDataStr = localStorage.getItem('userData');
   const [userData, setUserData] = useState(() => userDataStr ? JSON.parse(userDataStr) : null);
+  
+  // Hook Teacher Context cho phân hệ Giáo viên
+  const teacherContext = useTeacherContext();
+  const viewMode = teacherContext?.viewMode || 'SUBJECT';
+  const isHomeroomTeacher = teacherContext?.isHomeroomTeacher || false;
+  const homeroomClass = teacherContext?.homeroomClass || null;
   
   const userMenuRef = useRef(null);
   const notifMenuRef = useRef(null);
@@ -140,7 +149,99 @@ const DashboardLayout = () => {
 
   const getUserName = () => userData?.name || (userRole === 'admin' ? 'Super Admin' : userRole === 'teacher' ? 'Giáo viên' : 'Học sinh');
   const getUserEmail = () => userData?.email || `${userRole}@school.edu.vn`;
-  const getRoleLabel = () => userRole === 'admin' ? 'Quản trị viên' : userRole === 'teacher' ? 'Giáo viên' : 'Học sinh';
+  const getRoleLabel = () => {
+    if (userRole === 'admin') return 'Quản trị viên';
+    if (userRole === 'teacher') return userData?.position || 'Giáo viên';
+    return 'Học sinh';
+  };
+
+  const getTeacherSections = () => {
+    const pos = userData?.position || 'Giáo viên bộ môn';
+    const isBGH = pos === 'Hiệu trưởng' || pos === 'Phó Hiệu trưởng';
+    const isGiamThiHoacDoan = pos === 'Giám thị' || pos === 'Bí thư Đoàn trường';
+    const isToTruong = pos === 'Tổ trưởng chuyên môn' || pos === 'Tổ phó chuyên môn';
+
+    const sections = [
+      {
+        title: 'TỔNG QUAN',
+        items: [
+          { icon: LayoutDashboard, label: 'Dashboard Giảng Dạy', path: '/' },
+        ]
+      }
+    ];
+
+    // Ban Giám Hiệu
+    if (isBGH) {
+      sections.push({
+        title: 'BAN GIÁM HIỆU',
+        items: [
+          { icon: GraduationCap, label: 'Đội ngũ giáo viên', path: '/teachers' },
+          { icon: LayoutList, label: 'Danh sách lớp học', path: '/classes' },
+          { icon: BookOpenCheck, label: 'Sổ điểm toàn trường', path: '/grades' },
+          { icon: UserCheck, label: 'Chuyên cần toàn trường', path: '/attendance' },
+        ]
+      });
+    }
+
+    // Giám thị & Đoàn trường
+    if (isGiamThiHoacDoan) {
+      sections.push({
+        title: pos === 'Giám thị' ? 'GIÁM THỊ & NỀN NẾP' : 'CÔNG TÁC ĐOÀN THỂ',
+        items: [
+          { icon: UserCheck, label: 'Chuyên cần toàn trường', path: '/attendance' },
+          { icon: Users, label: 'Hồ sơ học sinh', path: '/students' },
+          { icon: LayoutList, label: 'Danh sách các lớp', path: '/classes' },
+        ]
+      });
+    }
+
+    // Tổ trưởng chuyên môn
+    if (isToTruong) {
+      sections.push({
+        title: 'TỔ CHUYÊN MÔN',
+        items: [
+          { icon: BookOpen, label: 'Môn học phụ trách', path: '/subjects' },
+          { icon: BookOpenCheck, label: 'Sổ điểm bộ môn', path: '/grades' },
+        ]
+      });
+    }
+
+    // Phân tách nghiệp vụ theo Chế độ góc nhìn (View Toggle)
+    if (viewMode === 'HOMEROOM' && isHomeroomTeacher) {
+      sections.push({
+        title: `CHỦ NHIỆM: ${homeroomClass?.className || 'LỚP CHỦ NHIỆM'}`,
+        items: [
+          { icon: School, label: 'Sổ Lớp Chủ Nhiệm', path: '/teacher/homeroom' },
+          { icon: UserCheck, label: 'Điểm Danh Học Sinh', path: '/attendance' },
+          { icon: BookOpenCheck, label: 'Học Bạ & Tổng Điểm', path: '/grades' },
+          { icon: Users, label: 'Danh Sách Học Sinh', path: '/students' },
+        ]
+      });
+    } else {
+      // Góc nhìn BỘ MÔN
+      sections.push({
+        title: 'GIẢNG DẠY BỘ MÔN',
+        items: [
+          { icon: BookOpenCheck, label: 'Sổ Nhập Điểm Bộ Môn', path: '/grades' },
+          { icon: Calendar, label: 'Lịch Giảng Dạy (TKB)', path: '/schedule' },
+          { icon: CalendarDays, label: 'Lịch Thi & Coi Thi', path: '/exams' },
+          { icon: Users, label: 'Tra Cứu Học Sinh', path: '/students' },
+          ...(isHomeroomTeacher ? [{ icon: School, label: `Lớp Chủ Nhiệm (${homeroomClass?.className || ''})`, path: '/teacher/homeroom' }] : [])
+        ]
+      });
+    }
+
+    // Cá nhân
+    sections.push({
+      title: 'CÁ NHÂN',
+      items: [
+        { icon: BellRing, label: 'Thông Báo', path: '/notifications' },
+        { icon: UserCircle, label: 'Hồ Sơ Giáo Viên', path: '/profile' },
+      ]
+    });
+
+    return sections;
+  };
 
   const menuSections = {
     admin: [
@@ -173,32 +274,7 @@ const DashboardLayout = () => {
         ]
       }
     ],
-    teacher: [
-      {
-        title: 'TỔNG QUAN',
-        items: [
-          { icon: LayoutDashboard, label: 'Dashboard Giảng Dạy', path: '/' },
-        ]
-      },
-      {
-        title: 'NGHIỆP VỤ SƯ PHẠM',
-        items: [
-          { icon: School, label: 'Lớp Chủ Nhiệm', path: '/teacher/homeroom' },
-          { icon: UserCheck, label: 'Điểm Danh Học Sinh', path: '/attendance' },
-          { icon: BookOpenCheck, label: 'Sổ Nhập Điểm', path: '/grades' },
-          { icon: Calendar, label: 'Lịch Giảng Dạy', path: '/schedule' },
-          { icon: CalendarDays, label: 'Lịch Thi & Coi Thi', path: '/exams' },
-          { icon: Users, label: 'Tra Cứu Học Sinh', path: '/students' },
-        ]
-      },
-      {
-        title: 'CÁ NHÂN',
-        items: [
-          { icon: BellRing, label: 'Thông Báo', path: '/notifications' },
-          { icon: UserCircle, label: 'Hồ Sơ Giáo Viên', path: '/profile' },
-        ]
-      }
-    ],
+    teacher: getTeacherSections(),
     student: [
       {
         title: 'TỔNG QUAN',
@@ -213,6 +289,7 @@ const DashboardLayout = () => {
           { icon: Calendar, label: 'Thời Khóa Biểu', path: '/student/schedule' },
           { icon: CalendarDays, label: 'Lịch Thi Phòng Thi', path: '/student/exams' },
           { icon: UserCheck, label: 'Chuyên Cần Điểm Danh', path: '/student/attendance' },
+          { icon: Layers, label: 'Đăng Ký Tổ Hợp Khối 10', path: '/student/subject-combination' },
         ]
       },
       {
@@ -273,12 +350,19 @@ const DashboardLayout = () => {
 
       {/* Role Badge Indicator */}
       {(expanded || isMobile) && (
-        <div className="px-4 pt-3.5 pb-1">
+        <div className="px-4 pt-3.5 pb-1 space-y-2">
           <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700/50">
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${
                 userRole === 'admin' ? 'bg-indigo-400 animate-ping' :
-                userRole === 'teacher' ? 'bg-emerald-400' : 'bg-blue-400'
+                userRole === 'teacher' ? (
+                  userData?.position === 'Hiệu trưởng' ? 'bg-amber-400 animate-pulse' :
+                  userData?.position === 'Phó Hiệu trưởng' ? 'bg-indigo-400' :
+                  userData?.position === 'Giám thị' ? 'bg-emerald-400' :
+                  userData?.position === 'Bí thư Đoàn trường' ? 'bg-rose-400' :
+                  userData?.position === 'Tổ trưởng chuyên môn' ? 'bg-purple-400' :
+                  'bg-emerald-400'
+                ) : 'bg-blue-400'
               }`} />
               <span className="text-[11px] font-semibold text-slate-300">
                 {getRoleLabel()} Portal
@@ -288,6 +372,13 @@ const DashboardLayout = () => {
               v2.5
             </span>
           </div>
+
+          {/* RoleSwitcher cho Giáo viên trong Sidebar */}
+          {userRole === 'teacher' && (
+            <div className="pt-1">
+              <RoleSwitcher />
+            </div>
+          )}
         </div>
       )}
 
@@ -431,6 +522,13 @@ const DashboardLayout = () => {
 
           {/* Right Action Icons: Search Icon (Mobile), Theme Switcher, Notifications, User Profile */}
           <div className="flex items-center space-x-2 md:space-x-3">
+            {/* Role Switcher cho Giáo viên trên Top Navbar */}
+            {userRole === 'teacher' && (
+              <div className="hidden sm:block">
+                <RoleSwitcher />
+              </div>
+            )}
+
             {/* Search Button for Mobile */}
             <button 
               onClick={() => setShowSearchModal(true)}
