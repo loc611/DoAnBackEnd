@@ -23,9 +23,13 @@ import {
   CalendarCheck,
   ShieldCheck,
   ChevronRight,
-  ArrowUpRight
+  ArrowUpRight,
+  ShieldAlert,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import Swal from 'sweetalert2';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -42,6 +46,7 @@ import {
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import StudentDashboard from '../components/student/StudentDashboard';
 
 ChartJS.register(
   CategoryScale,
@@ -106,7 +111,13 @@ const BentoStatCard = ({ title, value, icon: Icon, gradient, badgeText, badgeTyp
 };
 
 const Dashboard = () => {
-  const userRole = localStorage.getItem('userRole') || 'student';
+  const userRole = (localStorage.getItem('userRole') || 'student').toLowerCase();
+  
+  // Phân hệ học sinh: Trực tiếp hiển thị Student Dashboard chuyên dụng
+  if (userRole === 'student') {
+    return <StudentDashboard />;
+  }
+
   const userData = JSON.parse(localStorage.getItem('userData') || '{}');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -125,6 +136,8 @@ const Dashboard = () => {
   const [studentBills, setStudentBills] = useState([]);
   const [todaySchedule, setTodaySchedule] = useState([]);
   const [selectedChartSemester, setSelectedChartSemester] = useState('HK1');
+  const [earlyAlerts, setEarlyAlerts] = useState([]);
+  const [scanningAlerts, setScanningAlerts] = useState(false);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -133,6 +146,12 @@ const Dashboard = () => {
         // Fetch notifications
         const notifRes = await api.get('/notifications').catch(() => ({ data: [] }));
         setNotifications(notifRes.data?.slice(0, 5) || []);
+
+        // Fetch early warning alerts for admin and teacher
+        if (userRole === 'admin' || userRole === 'teacher') {
+          const alertsRes = await api.get('/alerts?status=active&limit=6').catch(() => ({ data: { data: [] } }));
+          setEarlyAlerts(alertsRes.data?.data || alertsRes.data?.alerts || []);
+        }
 
         if (userRole === 'admin') {
           const [studentsRes, classesRes, usersRes, subjectsRes, tuitionRes] = await Promise.all([
@@ -200,6 +219,36 @@ const Dashboard = () => {
     fetchDashboardData();
   }, [userRole]);
 
+  const handleTriggerScan = async () => {
+    try {
+      setScanningAlerts(true);
+      const res = await api.post('/alerts/scan');
+      const updatedAlerts = await api.get('/alerts?status=active&limit=6').catch(() => ({ data: { data: [] } }));
+      setEarlyAlerts(updatedAlerts.data?.data || updatedAlerts.data?.alerts || []);
+      const newCount = res.data?.data?.newAlertsCount ?? res.data?.data?.alertsCreated ?? 0;
+      Swal.fire({
+        icon: 'success',
+        title: 'Quét rủi ro hoàn tất',
+        text: `Hệ thống đã rà soát toàn trường. Phát hiện ${newCount} cảnh báo cần can thiệp sớm!`,
+        confirmButtonColor: '#2563eb'
+      });
+    } catch (err) {
+      Swal.fire('Lỗi', err.response?.data?.message || 'Không thể thực hiện quét rủi ro', 'error');
+    } finally {
+      setScanningAlerts(false);
+    }
+  };
+
+  const handleResolveAlert = async (alertId) => {
+    try {
+      await api.patch(`/alerts/${alertId}/resolve`, { resolutionNote: 'Đã can thiệp và xử lý qua Dashboard' });
+      setEarlyAlerts(prev => prev.filter(a => a.id !== alertId));
+      Swal.fire('Đã xử lý', 'Cảnh báo đã được đánh dấu giải quyết thành công.', 'success');
+    } catch (err) {
+      Swal.fire('Lỗi', err.response?.data?.message || 'Không thể cập nhật cảnh báo', 'error');
+    }
+  };
+
   // Chart Styling Configurations
   const barChartData = {
     labels: ['Khối 10', 'Khối 11', 'Khối 12'],
@@ -236,6 +285,130 @@ const Dashboard = () => {
     if (hour < 12) return 'Chào buổi sáng';
     if (hour < 18) return 'Chào buổi chiều';
     return 'Chào buổi tối';
+  };
+
+  const renderEarlyWarningCenter = () => {
+    const attendanceAlerts = earlyAlerts.filter(a => a.alertType === 'attendance_risk');
+    const academicAlerts = earlyAlerts.filter(a => a.alertType === 'academic_risk');
+    const docAlerts = earlyAlerts.filter(a => a.alertType === 'document_expiry');
+
+    return (
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-rose-200/80 dark:border-rose-950/60 overflow-hidden relative">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold shrink-0 shadow-sm">
+              <ShieldAlert size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-slate-800 dark:text-white">
+                  Trung Tâm Cảnh Báo Sớm (AI Early Warning Intelligence)
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                  {earlyAlerts.length} Hoạt động
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Rà soát tự động nguy cơ chuyên cần (vắng ≥ 3 buổi), điểm yếu (&lt; 3.5) và hồ sơ miễn giảm học phí theo Thông tư 22
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleTriggerScan}
+            disabled={scanningAlerts}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white text-xs font-bold shadow-md shadow-rose-600/20 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+          >
+            <RefreshCw size={14} className={scanningAlerts ? 'animate-spin' : ''} />
+            {scanningAlerts ? 'Đang rà soát...' : 'Quét Rủi Ro Toàn Trường'}
+          </button>
+        </div>
+
+        {/* Mini KPI Pills */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 my-4">
+          <div className="p-3 rounded-2xl bg-rose-50/60 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-bold text-rose-700 dark:text-rose-400">Nguy Cơ Chuyên Cần</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">Vắng không phép ≥ 3 buổi</p>
+            </div>
+            <span className="text-xl font-black text-rose-600 dark:text-rose-400">{attendanceAlerts.length}</span>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400">Nguy Cơ Học Tập</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">Điểm TB môn &lt; 3.5</p>
+            </div>
+            <span className="text-xl font-black text-amber-600 dark:text-amber-400">{academicAlerts.length}</span>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-bold text-blue-700 dark:text-blue-400">Hồ Sơ Chính Sách</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">Hạn nộp giấy tờ miễn giảm</p>
+            </div>
+            <span className="text-xl font-black text-blue-600 dark:text-blue-400">{docAlerts.length}</span>
+          </div>
+        </div>
+
+        {/* Alerts Grid or Clean Status */}
+        {earlyAlerts.length === 0 ? (
+          <div className="py-6 text-center bg-emerald-50/50 dark:bg-emerald-950/20 rounded-2xl border border-emerald-100 dark:border-emerald-900/30">
+            <CheckCircle2 size={26} className="text-emerald-500 mx-auto mb-1.5" />
+            <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300">Không có rủi ro nào ở ngưỡng báo động</p>
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5">Tất cả học sinh đều duy trì chuyên cần và mức điểm đạt chuẩn</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {earlyAlerts.slice(0, 6).map((alert) => (
+              <div 
+                key={alert.id}
+                className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 hover:border-rose-300 dark:hover:border-rose-700 transition-all flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase ${
+                      alert.severity === 'critical'
+                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                        : alert.severity === 'warning'
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                        : 'bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
+                    }`}>
+                      {alert.severity === 'critical' ? 'Báo Động Đỏ' : alert.severity === 'warning' ? 'Cảnh Báo' : 'Nhắc Nhở'}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {new Date(alert.createdAt).toLocaleDateString('vi-VN')}
+                    </span>
+                  </div>
+
+                  <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs line-clamp-1">
+                    {alert.title}
+                  </h4>
+                  <p className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 mt-0.5">
+                    {alert.student?.fullName} ({alert.student?.studentCode}) {alert.student?.class?.className ? `• Lớp ${alert.student.class.className}` : ''}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">
+                    {alert.description}
+                  </p>
+                </div>
+
+                <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
+                  <span className="text-[10px] font-medium text-slate-400">
+                    {alert.alertType === 'attendance_risk' ? 'Chuyên cần' : alert.alertType === 'academic_risk' ? 'Học tập' : 'Chính sách'}
+                  </span>
+                  <button
+                    onClick={() => handleResolveAlert(alert.id)}
+                    className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:underline cursor-pointer"
+                  >
+                    Đánh dấu đã xử lý
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   // ==========================================
@@ -317,6 +490,9 @@ const Dashboard = () => {
             badgeType="warning"
           />
         </div>
+
+        {/* Enterprise Early Warning Center */}
+        {renderEarlyWarningCenter()}
 
         {/* Schedule & Notices */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -742,6 +918,9 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Enterprise Early Warning Center */}
+      {renderEarlyWarningCenter()}
 
       {/* Quick Shortcuts & Live Activity Stream */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -11,12 +11,34 @@ const DEFAULT_SUBJECTS = [
 ];
 
 const TEACHER_POSITIONS = [
+  'Hiệu trưởng',
+  'Phó Hiệu trưởng',
+  'Tổ trưởng chuyên môn',
+  'Tổ phó chuyên môn',
   'Giáo viên bộ môn',
-  'Giáo viên chủ nhiệm',
-  'Trưởng bộ môn',
-  'Trưởng khoa / Quản khoa',
-  'Ban giám hiệu'
+  'Bí thư Đoàn trường',
+  'Giám thị'
 ];
+
+const getPositionBadgeStyle = (pos) => {
+  switch (pos) {
+    case 'Hiệu trưởng':
+      return 'bg-gradient-to-r from-amber-500/15 to-orange-500/15 text-amber-900 border-amber-300 font-extrabold shadow-xs';
+    case 'Phó Hiệu trưởng':
+      return 'bg-indigo-50 text-indigo-700 border-indigo-200 font-bold shadow-xs';
+    case 'Tổ trưởng chuyên môn':
+      return 'bg-purple-50 text-purple-700 border-purple-200 font-bold shadow-xs';
+    case 'Tổ phó chuyên môn':
+      return 'bg-violet-50 text-violet-700 border-violet-200 font-semibold';
+    case 'Bí thư Đoàn trường':
+      return 'bg-rose-50 text-rose-700 border-rose-200 font-bold shadow-xs';
+    case 'Giám thị':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200 font-bold shadow-xs';
+    case 'Giáo viên bộ môn':
+    default:
+      return 'bg-slate-100 text-slate-700 border-slate-200 font-medium';
+  }
+};
 
 const TeacherModal = ({ isOpen, onClose, teacher, subjectsList = [], onSubmit }) => {
   const [formData, setFormData] = useState({
@@ -197,6 +219,7 @@ const TeacherModal = ({ isOpen, onClose, teacher, subjectsList = [], onSubmit })
 const Teachers = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [positionFilter, setPositionFilter] = useState('');
+  const [homeroomFilter, setHomeroomFilter] = useState('');
   const [teachers, setTeachers] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -336,7 +359,9 @@ const Teachers = () => {
     const nameMatch = t.profile?.fullName?.toLowerCase().includes(searchTerm.toLowerCase());
     const codeMatch = t.profile?.teacherCode?.toLowerCase().includes(searchTerm.toLowerCase());
     const posMatch = positionFilter ? (t.profile?.position === positionFilter) : true;
-    return (nameMatch || codeMatch) && posMatch;
+    const isHomeroom = Boolean(t.profile?.homeroomClasses && t.profile.homeroomClasses.length > 0);
+    const homeroomMatch = homeroomFilter === 'has_homeroom' ? isHomeroom : (homeroomFilter === 'no_homeroom' ? !isHomeroom : true);
+    return (nameMatch || codeMatch) && posMatch && homeroomMatch;
   });
 
   const getInitials = (name) => {
@@ -416,7 +441,7 @@ const Teachers = () => {
             />
           </div>
 
-          <div className="flex space-x-2 w-full sm:w-auto">
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto">
             <select
               value={positionFilter}
               onChange={e => setPositionFilter(e.target.value)}
@@ -426,6 +451,16 @@ const Teachers = () => {
               {TEACHER_POSITIONS.map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}
+            </select>
+
+            <select
+              value={homeroomFilter}
+              onChange={e => setHomeroomFilter(e.target.value)}
+              className="px-4 py-2.5 border border-slate-200 rounded-2xl outline-none text-sm bg-white font-semibold text-slate-700 shadow-xs"
+            >
+              <option value="">Tất cả Kiêm nhiệm</option>
+              <option value="has_homeroom">Đang làm GVCN</option>
+              <option value="no_homeroom">Không chủ nhiệm</option>
             </select>
           </div>
         </div>
@@ -472,11 +507,18 @@ const Teachers = () => {
                         </div>
                       </td>
 
-                      {/* Chức vụ */}
+                      {/* Chức vụ & Kiêm nhiệm */}
                       <td className="px-6 py-4">
-                        <span className="whitespace-nowrap inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100 shadow-2xs">
-                          {teacher.profile?.position || 'Giáo viên bộ môn'}
-                        </span>
+                        <div className="flex flex-col items-start gap-1.5">
+                          <span className={`whitespace-nowrap inline-flex items-center px-3 py-1 rounded-full text-xs border ${getPositionBadgeStyle(teacher.profile?.position)}`}>
+                            {teacher.profile?.position || 'Giáo viên bộ môn'}
+                          </span>
+                          {teacher.profile?.homeroomClasses && teacher.profile.homeroomClasses.length > 0 && (
+                            <span className="whitespace-nowrap inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-teal-700 border border-teal-200/80 shadow-2xs">
+                              CN: {teacher.profile.homeroomClasses.map(c => c.className).join(', ')}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Bộ môn */}

@@ -15,7 +15,14 @@ import attendanceRoutes from './routes/attendanceRoutes.js';
 import examRoutes from './routes/examRoutes.js';
 import systemSettingRoutes from './routes/systemSettingRoutes.js';
 import auditLogRoutes from './routes/auditLogRoutes.js';
+import transferRoutes from './routes/transferRoutes.js';
+import teacherRoutes from './routes/teacherRoutes.js';
+import studentPortalRoutes from './routes/studentPortalRoutes.js';
 import importExportRoutes from './routes/importExportRoutes.js';
+import policyRoutes from './routes/policyRoutes.js';
+import alertRoutes from './routes/alertRoutes.js';
+import lessonLogRoutes from './routes/lessonLogRoutes.js';
+import petitionRoutes from './routes/petitionRoutes.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { initDefaultUsers } from './utils/initDefaultUsers.js';
@@ -52,11 +59,12 @@ const allowedOrigins = [
 // CORS Middleware
 app.use(cors({
     origin: (origin, callback) => {
-        // Cho phép request không có origin (như mobile app, postman, curl) hoặc nằm trong danh sách được phép
         if (!origin || allowedOrigins.includes(origin) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
             callback(null, true);
-        } else {
+        } else if (process.env.NODE_ENV !== 'production') {
             callback(null, true); // Dev mode fallback
+        } else {
+            callback(new Error(`CORS policy: Truy cập từ nguồn ${origin} bị từ chối.`));
         }
     },
     credentials: true,
@@ -82,7 +90,14 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/settings', systemSettingRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
+app.use('/api/transfers', transferRoutes);
+app.use('/api/teacher', teacherRoutes);
+app.use('/api/student', studentPortalRoutes);
 app.use('/api/import-export', importExportRoutes);
+app.use('/api/policies', policyRoutes);
+app.use('/api/alerts', alertRoutes);
+app.use('/api/lesson-logs', lessonLogRoutes);
+app.use('/api/petitions', petitionRoutes);
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running with PostgreSQL (Prisma) and RBAC+Scope Engine' });

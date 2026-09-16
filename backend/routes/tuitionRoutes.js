@@ -7,13 +7,21 @@ import {
     getStudentBills,
     lookupStudentFee,
     getClassStudentsTuition,
-    payAllStudentBills
+    payAllStudentBills,
+    getBillQrCode,
+    handlePaymentWebhook
 } from '../controllers/tuitionController.js';
 import { protect, authorize } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
+// Webhook nhận thông báo ngân hàng (không yêu cầu JWT Bearer của người dùng)
+router.post('/payment-webhook', handlePaymentWebhook);
+
 router.use(protect);
+
+// Sinh mã VietQR động cho hóa đơn
+router.get('/bills/:billId/qr', getBillQrCode);
 
 // Tra cứu nhanh học phí theo học sinh (Admin & Teacher)
 router.get('/lookup', authorize('admin', 'teacher'), lookupStudentFee);

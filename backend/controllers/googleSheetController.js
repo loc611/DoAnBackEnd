@@ -160,7 +160,7 @@ export const syncFromGoogleSheets = async (req, res) => {
                         where: { OR: [{ username }, { email }] }
                     });
 
-                    const defaultPassword = `${rawCode}@123`;
+                    const defaultPassword = '1111';
                     const hashedPassword = await bcrypt.hash(defaultPassword, 10);
 
                     await prisma.$transaction(async (tx) => {

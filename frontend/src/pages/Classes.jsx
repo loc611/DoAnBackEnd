@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import Swal from 'sweetalert2';
 import api from '../services/api';
-import { Search, Plus, Edit, Trash2, X, Eye, Users } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, X, Eye, Users, Printer } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -188,7 +188,7 @@ const ClassFormModal = ({ isOpen, onClose, classData, onSuccess, allClasses }) =
     );
 };
 
-const ClassRosterModal = ({ isOpen, onClose, selectedClass, onRefreshClasses }) => {
+const ClassRosterModal = ({ isOpen, onClose, selectedClass, onRefreshClasses, onOpenPrint }) => {
     const [students, setStudents] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -326,6 +326,13 @@ const ClassRosterModal = ({ isOpen, onClose, selectedClass, onRefreshClasses }) 
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto">
                         <button
+                            onClick={() => onOpenPrint && onOpenPrint(selectedClass, students)}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5 cursor-pointer"
+                            title="In danh sách học sinh lớp này"
+                        >
+                            <Printer size={16} /> In danh sách
+                        </button>
+                        <button
                             onClick={handleOpenAddStudent}
                             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-indigo-600/20 flex items-center gap-1.5 cursor-pointer"
                         >
@@ -455,6 +462,248 @@ const ClassRosterModal = ({ isOpen, onClose, selectedClass, onRefreshClasses }) 
     );
 };
 
+const PrintClassModal = ({ isOpen, onClose, classData, initialStudents = null }) => {
+    const [students, setStudents] = useState(initialStudents || []);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (isOpen && classData) {
+            if (initialStudents && initialStudents.length > 0) {
+                setStudents(initialStudents);
+            } else {
+                fetchStudents();
+            }
+        }
+    }, [isOpen, classData, initialStudents]);
+
+    const fetchStudents = async () => {
+        try {
+            setLoading(true);
+            const res = await api.get(`/classes/${classData.id}/students`);
+            setStudents(res.data || []);
+        } catch (error) {
+            console.error('Lỗi khi tải danh sách học sinh để in:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (!isOpen || !classData) return null;
+
+    const handlePrint = () => {
+        window.print();
+    };
+
+    const formatDate = (dateStr) => {
+        if (!dateStr) return '—';
+        try {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return '—';
+            return d.toLocaleDateString('vi-VN', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+        } catch {
+            return '—';
+        }
+    };
+
+    const today = new Date();
+    const day = today.getDate();
+    const month = today.getMonth() + 1;
+    const year = today.getFullYear();
+    const maleCount = students.filter(s => (s.gender || '').toLowerCase() === 'nam' || !s.gender).length;
+    const femaleCount = students.filter(s => (s.gender || '').toLowerCase() === 'nữ').length;
+
+    return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-white print:static">
+            <style>{`
+                @media print {
+                    body * {
+                        visibility: hidden !important;
+                    }
+                    #printable-class-roster, #printable-class-roster * {
+                        visibility: visible !important;
+                    }
+                    #printable-class-roster {
+                        position: fixed !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100% !important;
+                        margin: 0 !important;
+                        padding: 12mm 15mm !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        background: white !important;
+                        color: black !important;
+                    }
+                    @page {
+                        size: A4 portrait;
+                        margin: 10mm;
+                    }
+                }
+            `}</style>
+
+            <motion.div
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.96 }}
+                className="bg-slate-100 rounded-3xl shadow-2xl w-full max-w-5xl max-h-[95vh] flex flex-col border border-slate-200 overflow-hidden print:max-w-none print:max-h-none print:border-none print:shadow-none print:rounded-none print:w-full print:bg-white"
+            >
+                {/* Modal Top Control Bar (Hidden when printing) */}
+                <div className="p-4 bg-white border-b border-slate-200 flex items-center justify-between shadow-xs print:hidden">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+                            <Printer size={20} />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-slate-800 text-lg">Xem trước bản in - Lớp {classData.className}</h3>
+                            <p className="text-xs text-slate-500 font-medium">Bản in chuẩn khổ giấy A4, hỗ trợ lưu file PDF hoặc in trực tiếp ra máy in</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={handlePrint}
+                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-emerald-600/20 flex items-center gap-2 cursor-pointer"
+                        >
+                            <Printer size={18} /> In ngay / Lưu PDF
+                        </button>
+                        <button
+                            onClick={onClose}
+                            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
+                            title="Đóng xem trước"
+                        >
+                            <X size={20} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Printable Document Sheet Container */}
+                <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-200/70 flex justify-center print:p-0 print:bg-white print:overflow-visible">
+                    {loading ? (
+                        <div className="p-16 text-center text-slate-500 font-medium bg-white rounded-2xl w-full max-w-[850px] shadow-sm">
+                            Đang chuẩn bị dữ liệu bản in...
+                        </div>
+                    ) : (
+                        <div 
+                            id="printable-class-roster"
+                            className="bg-white text-black p-8 sm:p-12 w-full max-w-[850px] shadow-lg border border-slate-300 rounded-lg min-h-[1050px] flex flex-col justify-between font-serif print:m-0 print:p-4 print:border-none print:shadow-none print:w-full print:max-w-none print:rounded-none"
+                            style={{ fontFamily: '"Times New Roman", Times, serif' }}
+                        >
+                            <div>
+                                {/* Header: National Motto and School Info */}
+                                <div className="flex justify-between items-start border-b border-dashed border-gray-300 pb-4 mb-6">
+                                    <div className="text-center font-serif text-xs sm:text-sm">
+                                        <p className="font-semibold uppercase tracking-wider text-slate-700">SỞ GD&ĐT THÀNH PHỐ</p>
+                                        <p className="font-bold uppercase text-sm sm:text-base text-slate-900">TRƯỜNG THPT TTLN</p>
+                                        <p className="text-xs text-slate-500 mt-0.5">Mã trường: TTLN-2025</p>
+                                        <div className="w-24 h-0.5 bg-slate-700 mx-auto mt-1"></div>
+                                    </div>
+
+                                    <div className="text-center font-serif text-xs sm:text-sm">
+                                        <p className="font-bold uppercase tracking-wider text-slate-900">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
+                                        <p className="font-bold text-slate-800">Độc lập - Tự do - Hạnh phúc</p>
+                                        <div className="w-36 h-0.5 bg-slate-800 mx-auto mt-1"></div>
+                                        <p className="italic text-xs text-slate-600 mt-2">
+                                            Ngày {day < 10 ? `0${day}` : day} tháng {month < 10 ? `0${month}` : month} năm {year}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Title */}
+                                <div className="text-center my-6 space-y-1">
+                                    <h1 className="text-xl sm:text-2xl font-extrabold uppercase tracking-wide text-slate-950">
+                                        DANH SÁCH HỌC SINH LỚP {classData.className}
+                                    </h1>
+                                    <p className="text-sm font-semibold text-slate-700">
+                                        Năm học: {classData.academicYear || '2025-2026'} &nbsp;•&nbsp; Khối {classData.grade}
+                                    </p>
+                                </div>
+
+                                {/* Summary Meta */}
+                                <div className="flex flex-wrap justify-between text-xs sm:text-sm text-slate-800 mb-4 px-3 py-2 bg-slate-50 border border-slate-200 rounded">
+                                    <p>
+                                        <span className="font-bold">Giáo viên chủ nhiệm:</span> {classData.homeroomTeacher?.fullName || 'Chưa phân công'}
+                                    </p>
+                                    <p>
+                                        <span className="font-bold">Tổng sĩ số:</span> {students.length} học sinh (Nam: {maleCount}, Nữ: {femaleCount})
+                                    </p>
+                                </div>
+
+                                {/* Main Student Table */}
+                                <table className="w-full border-collapse border border-slate-900 text-xs sm:text-sm">
+                                    <thead>
+                                        <tr className="bg-slate-100 text-slate-900 font-bold">
+                                            <th className="border border-slate-900 p-2 text-center w-12">STT</th>
+                                            <th className="border border-slate-900 p-2 text-center w-28">Mã học sinh</th>
+                                            <th className="border border-slate-900 p-2 text-left">Họ và tên</th>
+                                            <th className="border border-slate-900 p-2 text-center w-24">Ngày sinh</th>
+                                            <th className="border border-slate-900 p-2 text-center w-20">Giới tính</th>
+                                            <th className="border border-slate-900 p-2 text-center w-32">Số điện thoại</th>
+                                            <th className="border border-slate-900 p-2 text-center w-28">Ký nhận / Ghi chú</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {students.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={7} className="border border-slate-900 p-6 text-center italic text-slate-500">
+                                                    Lớp học chưa có danh sách học sinh.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            students.map((st, index) => (
+                                                <tr key={st.id || index} className="hover:bg-slate-50">
+                                                    <td className="border border-slate-900 p-2 text-center font-semibold">{index + 1}</td>
+                                                    <td className="border border-slate-900 p-2 text-center font-mono font-medium">{st.studentCode}</td>
+                                                    <td className="border border-slate-900 p-2 font-medium">{st.fullName}</td>
+                                                    <td className="border border-slate-900 p-2 text-center">{formatDate(st.dateOfBirth)}</td>
+                                                    <td className="border border-slate-900 p-2 text-center">{st.gender || 'Nam'}</td>
+                                                    <td className="border border-slate-900 p-2 text-center">{st.phone || '—'}</td>
+                                                    <td className="border border-slate-900 p-2 text-center"></td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Signatures */}
+                            <div className="mt-12 pt-6 grid grid-cols-3 text-center text-xs sm:text-sm text-slate-900 gap-4 break-inside-avoid">
+                                <div className="space-y-16">
+                                    <div>
+                                        <p className="font-bold uppercase">NGƯỜI LẬP DANH SÁCH</p>
+                                        <p className="italic text-xs text-slate-500">(Ký, ghi rõ họ tên)</p>
+                                    </div>
+                                    <p className="font-semibold text-slate-800">............................................</p>
+                                </div>
+
+                                <div className="space-y-16">
+                                    <div>
+                                        <p className="font-bold uppercase">GIÁO VIÊN CHỦ NHIỆM</p>
+                                        <p className="italic text-xs text-slate-500">(Ký, ghi rõ họ tên)</p>
+                                    </div>
+                                    <p className="font-bold text-slate-900">
+                                        {classData.homeroomTeacher?.fullName || '............................................'}
+                                    </p>
+                                </div>
+
+                                <div className="space-y-16">
+                                    <div>
+                                        <p className="font-bold uppercase">BAN GIÁM HIỆU DUYỆT</p>
+                                        <p className="italic text-xs text-slate-500">(Ký, đóng dấu)</p>
+                                    </div>
+                                    <p className="font-semibold text-slate-800">............................................</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </motion.div>
+        </div>
+    );
+};
+
 const Classes = () => {
     const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -462,6 +711,9 @@ const Classes = () => {
     const [selectedClass, setSelectedClass] = useState(null);
     const [rosterClass, setRosterClass] = useState(null);
     const [isRosterModalOpen, setIsRosterModalOpen] = useState(false);
+    const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+    const [printClass, setPrintClass] = useState(null);
+    const [printStudents, setPrintStudents] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [gradeFilter, setGradeFilter] = useState('');
     const navigate = useNavigate();
@@ -497,6 +749,13 @@ const Classes = () => {
         if (e) e.stopPropagation();
         setRosterClass(c);
         setIsRosterModalOpen(true);
+    };
+
+    const handleOpenPrint = (c, e, studentsList = null) => {
+        if (e) e.stopPropagation();
+        setPrintClass(c);
+        setPrintStudents(studentsList);
+        setIsPrintModalOpen(true);
     };
 
     const handleDelete = async (c, e) => {
@@ -628,6 +887,13 @@ const Classes = () => {
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex justify-end items-center space-x-1.5">
                                                 <button 
+                                                    onClick={(e) => handleOpenPrint(c, e)} 
+                                                    className="w-8 h-8 rounded-xl flex items-center justify-center bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105 transition-all cursor-pointer" 
+                                                    title="In danh sách học sinh lớp này"
+                                                >
+                                                    <Printer size={15} />
+                                                </button>
+                                                <button 
                                                     onClick={(e) => handleViewRoster(c, e)} 
                                                     className="w-8 h-8 rounded-xl flex items-center justify-center bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:scale-105 transition-all cursor-pointer" 
                                                     title="Xem danh sách học sinh trong lớp"
@@ -674,6 +940,15 @@ const Classes = () => {
                         onClose={() => setIsRosterModalOpen(false)}
                         selectedClass={rosterClass}
                         onRefreshClasses={fetchClasses}
+                        onOpenPrint={(cls, stList) => handleOpenPrint(cls, null, stList)}
+                    />
+                )}
+                {isPrintModalOpen && (
+                    <PrintClassModal
+                        isOpen={isPrintModalOpen}
+                        onClose={() => setIsPrintModalOpen(false)}
+                        classData={printClass}
+                        initialStudents={printStudents}
                     />
                 )}
             </AnimatePresence>

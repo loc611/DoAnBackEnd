@@ -26,7 +26,13 @@ export const getUsers = async (req, res) => {
             orderBy: { createdAt: 'desc' },
             include: {
                 admin: true,
-                teacher: true,
+                teacher: {
+                    include: {
+                        homeroomClasses: {
+                            select: { id: true, className: true, grade: true }
+                        }
+                    }
+                },
                 student: true
             }
         });
@@ -54,6 +60,13 @@ export const getUsers = async (req, res) => {
 export const createUser = async (req, res) => {
     try {
         let { username, email, password, role, ...profileData } = req.body;
+
+        if (!password) {
+            password = '1111';
+        }
+        if (password.length < 4) {
+            return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 4 ký tự' });
+        }
 
         const cleanUsername = String(username).trim();
         let cleanEmail = email ? String(email).trim().toLowerCase() : '';
@@ -232,8 +245,48 @@ export const updateUser = async (req, res) => {
         const user = await prisma.user.findUnique({ where: { id: req.params.id } });
         if (!user) return res.status(404).json({ message: 'Tài khoản không tồn tại' });
 
-        let { fullName, phone, department, subject, classId, parentPhone, gender } = req.body;
+        let { 
+            fullName, 
+            phone, 
+            email,
+            status,
+            department, 
+            subject, 
+            classId, 
+            parentName,
+            parentPhone, 
+            gender,
+            dateOfBirth,
+            academicYear,
+            studentCode
+        } = req.body;
 
+        // 1. Validate & chuẩn hóa Email (nếu có thay đổi)
+        if (email !== undefined && email !== null && email !== '') {
+            email = String(email).trim().toLowerCase();
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                return res.status(400).json({ message: 'Email không đúng định dạng' });
+            }
+            if (email !== user.email) {
+                const emailExists = await prisma.user.findFirst({
+                    where: { email, NOT: { id: user.id } }
+                });
+                if (emailExists) {
+                    return res.status(400).json({ message: 'Email này đã được sử dụng bởi tài khoản khác' });
+                }
+            }
+        }
+
+        // 2. Validate Trạng thái tài khoản (nếu có)
+        const allowedStatuses = ['active', 'suspended', 'withdrawn', 'blocked', 'inactive'];
+        if (status !== undefined && status !== null && status !== '') {
+            if (!allowedStatuses.includes(status)) {
+                return res.status(400).json({ message: 'Trạng thái tài khoản không hợp lệ' });
+            }
+        }
+
+        // 3. Validate Số điện thoại cá nhân (đúng 10 chữ số, bắt đầu bằng 0 & duy nhất)
         if (phone !== undefined && phone !== null && phone !== '') {
             phone = String(phone).trim();
             if (!isValidPhoneNumber(phone)) {
@@ -245,13 +298,32 @@ export const updateUser = async (req, res) => {
             }
         }
 
-        if (user.role === 'student' && parentPhone !== undefined && parentPhone !== null && parentPhone !== '') {
-            parentPhone = String(parentPhone).trim();
-            if (!isValidPhoneNumber(parentPhone)) {
-                return res.status(400).json({ message: 'SĐT phụ huynh phải gồm đúng 10 chữ số, bắt đầu bằng 0' });
+        // 4. Validate Ngày sinh (nếu có)
+        let parsedDob = undefined;
+        if (dateOfBirth !== undefined) {
+            if (dateOfBirth === '' || dateOfBirth === null) {
+                parsedDob = null;
+            } else {
+                const d = new Date(dateOfBirth);
+                if (isNaN(d.getTime())) {
+                    return res.status(400).json({ message: 'Ngày sinh không hợp lệ' });
+                }
+                parsedDob = d;
             }
         }
 
+        // 5. Cập nhật User credentials (email, status) nếu có thay đổi
+        const userUpdateData = {};
+        if (email && email !== user.email) userUpdateData.email = email;
+        if (status && status !== user.status) userUpdateData.status = status;
+        if (Object.keys(userUpdateData).length > 0) {
+            await prisma.user.update({
+                where: { id: user.id },
+                data: userUpdateData
+            });
+        }
+
+        // 6. Cập nhật hồ sơ theo vai trò
         if (user.role === 'admin') {
             await prisma.admin.update({
                 where: { userId: user.id },
@@ -268,30 +340,54 @@ export const updateUser = async (req, res) => {
                     fullName: fullName !== undefined ? fullName.trim() : undefined, 
                     phone: phone !== undefined ? (phone === '' ? null : phone) : undefined, 
                     specialization: subject !== undefined ? subject : undefined,
-                    position: position !== undefined ? position : undefined
+                    position: position !== undefined ? position : undefined,
+                    gender: gender !== undefined ? gender : undefined
                 }
             });
         } else if (user.role === 'student') {
             const oldStudent = await prisma.student.findUnique({ where: { userId: user.id } });
+            if (!oldStudent) {
+                return res.status(404).json({ message: 'Không tìm thấy hồ sơ học sinh tương ứng' });
+            }
+
+            // Quy tắc bất biến: Tuyệt đối không cho phép sửa mã học sinh
+            if (studentCode !== undefined && studentCode !== null && studentCode !== '') {
+                const normalizedCode = String(studentCode).trim().toUpperCase();
+                if (normalizedCode !== oldStudent.studentCode) {
+                    return res.status(400).json({ message: 'Mã học sinh là trường bất biến, không thể thay đổi' });
+                }
+            }
+
+            // Validate SĐT phụ huynh (SĐT liên hệ khẩn cấp)
+            if (parentPhone !== undefined && parentPhone !== null && parentPhone !== '') {
+                parentPhone = String(parentPhone).trim();
+                if (!isValidPhoneNumber(parentPhone)) {
+                    return res.status(400).json({ message: 'SĐT phụ huynh (liên hệ khẩn cấp) phải gồm đúng 10 chữ số, bắt đầu bằng 0' });
+                }
+            }
+
             const updatedStudent = await prisma.student.update({
                 where: { userId: user.id },
                 data: { 
                     fullName: fullName !== undefined ? fullName.trim() : undefined, 
                     phone: phone !== undefined ? (phone === '' ? null : phone) : undefined, 
-                    gender: gender || undefined, 
-                    classId: classId !== undefined ? (classId === '' ? null : classId) : undefined, 
-                    parentPhone: parentPhone !== undefined ? (parentPhone === '' ? null : parentPhone) : undefined 
+                    gender: gender !== undefined ? gender : undefined, 
+                    dateOfBirth: parsedDob,
+                    parentName: parentName !== undefined ? (parentName === '' ? null : parentName.trim()) : undefined,
+                    parentPhone: parentPhone !== undefined ? (parentPhone === '' ? null : parentPhone) : undefined,
+                    academicYear: academicYear !== undefined ? (academicYear === '' ? null : academicYear.trim()) : undefined,
+                    classId: classId !== undefined ? (classId === '' ? null : classId) : undefined
                 }
             });
 
-            if (updatedStudent.classId && updatedStudent.classId !== oldStudent?.classId) {
+            if (updatedStudent.classId && updatedStudent.classId !== oldStudent.classId) {
                 await autoAssignFeeProfilesForStudent(updatedStudent.id, updatedStudent.classId);
             }
         }
 
         res.json({ message: 'Cập nhật thông tin thành công' });
     } catch (error) {
-        console.error(error);
+        console.error('Update User Error:', error);
         res.status(500).json({ message: error.message || 'Lỗi khi cập nhật tài khoản' });
     }
 };
@@ -322,6 +418,11 @@ export const updateStatus = async (req, res) => {
             return res.status(400).json({ message: 'Không thể tự khóa hoặc đình chỉ tài khoản của chính mình' });
         }
 
+        const allowedStatuses = ['active', 'suspended', 'withdrawn', 'blocked', 'inactive'];
+        if (!allowedStatuses.includes(status)) {
+            return res.status(400).json({ message: 'Trạng thái không hợp lệ' });
+        }
+
         const oldStatus = user.status;
         const updatedUser = await prisma.user.update({
             where: { id: req.params.id },
@@ -332,6 +433,7 @@ export const updateStatus = async (req, res) => {
         if (updatedUser.status === 'active') statusText = 'kích hoạt';
         else if (updatedUser.status === 'blocked') statusText = 'khóa';
         else if (updatedUser.status === 'suspended') statusText = 'đình chỉ';
+        else if (updatedUser.status === 'withdrawn') statusText = 'cho thôi học';
 
         // Ghi vết kiểm toán (Audit Logging)
         await AuditLogService.log({
@@ -362,9 +464,9 @@ export const resetPassword = async (req, res) => {
         const user = await prisma.user.findUnique({ where: { id: req.params.id } });
         if (!user) return res.status(404).json({ message: 'Tài khoản không tồn tại' });
 
-        const { password } = req.body;
-        if (!password || password.length < 6) {
-            return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 6 ký tự' });
+        const password = req.body.password || req.body.newPassword;
+        if (!password || password.length < 4) {
+            return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 4 ký tự' });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);

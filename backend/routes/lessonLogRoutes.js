@@ -1,0 +1,22 @@
+import express from 'express';
+import {
+  getLessonLogsByClass,
+  saveLessonLog,
+  getSyllabusProgress
+} from '../controllers/lessonLogController.js';
+import { protect, authorize } from '../middlewares/authMiddleware.js';
+
+const router = express.Router();
+
+router.use(protect);
+
+// Xem sổ đầu bài của lớp (Mọi người dùng đăng nhập xem theo quyền)
+router.get('/class/:classId', getLessonLogsByClass);
+
+// Thống kê tiến độ phân phối chương trình môn học
+router.get('/progress', getSyllabusProgress);
+
+// Ký và lưu sổ đầu bài (Admin & Teacher)
+router.post('/', authorize('admin', 'teacher'), saveLessonLog);
+
+export default router;

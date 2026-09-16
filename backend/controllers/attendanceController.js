@@ -31,7 +31,8 @@ export const getPeriodsByDate = async (req, res) => {
             2: 'tuesday',
             3: 'wednesday',
             4: 'thursday',
-            5: 'friday'
+            5: 'friday',
+            6: 'saturday'
         };
         const dayField = dayFieldMap[dayOfWeek];
         const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
@@ -42,7 +43,7 @@ export const getPeriodsByDate = async (req, res) => {
                 dayOfWeek,
                 dayName: dayNames[dayOfWeek],
                 periods: [],
-                message: 'Không có thời khóa biểu vào cuối tuần'
+                message: 'Chủ Nhật không có thời khóa biểu học tập'
             });
         }
 

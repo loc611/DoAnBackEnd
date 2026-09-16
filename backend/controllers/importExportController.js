@@ -8,6 +8,7 @@ import {
     isStudentCodeTaken 
 } from '../utils/validator.js';
 import { autoAssignFeeProfilesForStudent } from '../utils/feeAutoAssign.js';
+import { generateMasterGradebook, generateMoetSyncPayload } from '../utils/moetReportExporter.js';
 
 /**
  * Import danh sách học sinh theo lô (Batch Import) từ Excel/CSV
@@ -26,8 +27,13 @@ export const importStudentsBatch = async (req, res) => {
             errors: []
         };
 
-        // Cache all classes for fast lookup
-        const allClasses = await prisma.class.findMany();
+        // 1. Bulk Cache tất cả Lớp, Mã HS và SĐT để kiểm tra trong bộ nhớ O(1)
+        const [allClasses, existingStudents, existingUsers] = await Promise.all([
+            prisma.class.findMany({ select: { id: true, className: true } }),
+            prisma.student.findMany({ select: { studentCode: true, phone: true } }),
+            prisma.user.findMany({ select: { username: true, email: true } })
+        ]);
+
         const classMapByName = new Map();
         const classMapById = new Map();
         allClasses.forEach(c => {
@@ -35,138 +41,140 @@ export const importStudentsBatch = async (req, res) => {
             classMapById.set(c.id, c.id);
         });
 
-        for (let i = 0; i < students.length; i++) {
-            const raw = students[i];
-            const rowIndex = i + 1;
+        const knownCodes = new Set(existingStudents.map(s => s.studentCode.trim().toUpperCase()));
+        const knownPhones = new Set(existingStudents.map(s => s.phone).filter(Boolean));
+        const knownUsernames = new Set(existingUsers.map(u => u.username.toLowerCase()));
 
-            try {
-                let code = raw.studentCode ? String(raw.studentCode).trim().toUpperCase() : '';
-                const fullName = raw.fullName ? String(raw.fullName).trim() : '';
-                let phone = raw.phone ? String(raw.phone).trim() : null;
-                let parentPhone = raw.parentPhone ? String(raw.parentPhone).trim() : null;
-                const parentName = raw.parentName ? String(raw.parentName).trim() : null;
-                const gender = raw.gender ? String(raw.gender).trim() : 'Nam';
-                const dob = raw.dateOfBirth ? new Date(raw.dateOfBirth) : null;
-                const className = raw.className ? String(raw.className).trim().toUpperCase() : '';
+        // 2. Chia thành các chunk (25 học sinh/lô) để xử lý song song, tránh nghẽn Event Loop
+        const CHUNK_SIZE = 25;
+        for (let cIdx = 0; cIdx < students.length; cIdx += CHUNK_SIZE) {
+            const chunk = students.slice(cIdx, cIdx + CHUNK_SIZE);
 
-                // 1. Validate required fields
-                if (!fullName) {
-                    throw new Error(`Dòng ${rowIndex}: Họ và tên học sinh không được để trống`);
-                }
+            await Promise.all(chunk.map(async (raw, i) => {
+                const rowIndex = cIdx + i + 1;
 
-                // 2. Validate / generate studentCode
-                if (code) {
-                    if (!isValidStudentCode(code)) {
-                        throw new Error(`Dòng ${rowIndex}: Mã học sinh "${code}" không đúng định dạng (VD: HS123456)`);
+                try {
+                    let code = raw.studentCode ? String(raw.studentCode).trim().toUpperCase() : '';
+                    const fullName = raw.fullName ? String(raw.fullName).trim() : '';
+                    let phone = raw.phone ? String(raw.phone).trim() : null;
+                    let parentPhone = raw.parentPhone ? String(raw.parentPhone).trim() : null;
+                    const parentName = raw.parentName ? String(raw.parentName).trim() : null;
+                    const gender = raw.gender ? String(raw.gender).trim() : 'Nam';
+                    const dob = raw.dateOfBirth ? new Date(raw.dateOfBirth) : null;
+                    const className = raw.className ? String(raw.className).trim().toUpperCase() : '';
+
+                    // Validate required fields
+                    if (!fullName) {
+                        throw new Error(`Dòng ${rowIndex}: Họ và tên học sinh không được để trống`);
                     }
-                    const taken = await isStudentCodeTaken(prisma, code);
-                    if (taken) {
-                        throw new Error(`Dòng ${rowIndex}: Mã học sinh "${code}" đã tồn tại trong hệ thống`);
-                    }
-                } else {
-                    let isUnique = false;
-                    while (!isUnique) {
-                        const testCode = `HS${Math.floor(100000 + Math.random() * 900000)}`;
-                        const exists = await prisma.student.findUnique({ where: { studentCode: testCode } });
-                        if (!exists) {
-                            code = testCode;
-                            isUnique = true;
+
+                    // Validate / sinh mã học sinh duy nhất trong Set
+                    if (code) {
+                        if (!isValidStudentCode(code)) {
+                            throw new Error(`Dòng ${rowIndex}: Mã học sinh "${code}" không đúng định dạng (VD: HS123456)`);
                         }
-                    }
-                }
-
-                // 3. Validate phone numbers
-                if (phone) {
-                    if (!isValidPhoneNumber(phone)) {
-                        throw new Error(`Dòng ${rowIndex}: Số điện thoại học sinh "${phone}" không hợp lệ (phải đủ 10 số, bắt đầu bằng 0)`);
-                    }
-                    const phoneTaken = await isPhoneTakenInSystem(prisma, phone);
-                    if (phoneTaken) {
-                        throw new Error(`Dòng ${rowIndex}: SĐT học sinh "${phone}" đã được sử dụng trong hệ thống`);
-                    }
-                }
-
-                if (parentPhone && !isValidPhoneNumber(parentPhone)) {
-                    throw new Error(`Dòng ${rowIndex}: SĐT phụ huynh "${parentPhone}" không hợp lệ (phải đủ 10 số, bắt đầu bằng 0)`);
-                }
-
-                // 4. Resolve classId
-                let targetClassId = null;
-                if (className && classMapByName.has(className)) {
-                    targetClassId = classMapByName.get(className);
-                } else if (raw.classId && classMapById.has(raw.classId)) {
-                    targetClassId = raw.classId;
-                } else if (defaultClassId && classMapById.has(defaultClassId)) {
-                    targetClassId = defaultClassId;
-                }
-
-                // 5. Account provisioning: username = code.toLowerCase(), email = code.toLowerCase()@school.edu.vn, password = code@123
-                const username = code.toLowerCase();
-                const email = `${username}@school.edu.vn`;
-                const defaultPassword = `${code}@123`;
-                const passwordHash = await bcrypt.hash(defaultPassword, 10);
-
-                // 6. Database Transaction
-                const createdStudent = await prisma.$transaction(async (tx) => {
-                    const user = await tx.user.create({
-                        data: {
-                            username,
-                            email,
-                            password: passwordHash,
-                            role: 'student',
-                            status: 'active'
+                        if (knownCodes.has(code)) {
+                            throw new Error(`Dòng ${rowIndex}: Mã học sinh "${code}" đã tồn tại trong hệ thống`);
                         }
-                    });
+                    } else {
+                        let testCode = '';
+                        do {
+                            testCode = `HS${Math.floor(100000 + Math.random() * 900000)}`;
+                        } while (knownCodes.has(testCode));
+                        code = testCode;
+                    }
+                    knownCodes.add(code);
 
-                    if (studentRole) {
-                        await tx.userRole.create({
+                    // Validate phone numbers
+                    if (phone) {
+                        if (!isValidPhoneNumber(phone)) {
+                            throw new Error(`Dòng ${rowIndex}: Số điện thoại "${phone}" không hợp lệ (phải đủ 10 số, bắt đầu bằng 0)`);
+                        }
+                        if (knownPhones.has(phone)) {
+                            throw new Error(`Dòng ${rowIndex}: Số điện thoại "${phone}" đã được sử dụng trong hệ thống`);
+                        }
+                        knownPhones.add(phone);
+                    }
+
+                    if (parentPhone && !isValidPhoneNumber(parentPhone)) {
+                        throw new Error(`Dòng ${rowIndex}: SĐT phụ huynh "${parentPhone}" không hợp lệ (phải đủ 10 số, bắt đầu bằng 0)`);
+                    }
+
+                    // Resolve classId
+                    let targetClassId = null;
+                    if (className && classMapByName.has(className)) {
+                        targetClassId = classMapByName.get(className);
+                    } else if (raw.classId && classMapById.has(raw.classId)) {
+                        targetClassId = raw.classId;
+                    } else if (defaultClassId && classMapById.has(defaultClassId)) {
+                        targetClassId = defaultClassId;
+                    }
+
+                    const username = code.toLowerCase();
+                    if (knownUsernames.has(username)) {
+                        throw new Error(`Dòng ${rowIndex}: Tài khoản "${username}" đã tồn tại`);
+                    }
+                    knownUsernames.add(username);
+
+                    const email = `${username}@school.edu.vn`;
+                    const defaultPassword = `${code}@123`;
+                    const passwordHash = await bcrypt.hash(defaultPassword, 10);
+
+                    // Ghi Database Transaction cho từng học sinh
+                    const createdStudent = await prisma.$transaction(async (tx) => {
+                        const user = await tx.user.create({
                             data: {
-                                userId: user.id,
-                                roleId: studentRole.id
+                                username,
+                                email,
+                                password: passwordHash,
+                                role: 'student',
+                                status: 'active'
                             }
                         });
+
+                        if (studentRole) {
+                            await tx.userRole.create({
+                                data: { userId: user.id, roleId: studentRole.id }
+                            });
+                        }
+
+                        return await tx.student.create({
+                            data: {
+                                userId: user.id,
+                                studentCode: code,
+                                fullName,
+                                gender,
+                                dateOfBirth: dob,
+                                phone,
+                                parentPhone,
+                                parentName,
+                                classId: targetClassId
+                            },
+                            include: { class: true }
+                        });
+                    });
+
+                    // Gán học phí tự động chạy bất đồng bộ
+                    if (createdStudent.classId) {
+                        autoAssignFeeProfilesForStudent(createdStudent.id, createdStudent.classId).catch(() => {});
                     }
 
-                    const st = await tx.student.create({
-                        data: {
-                            userId: user.id,
-                            studentCode: code,
-                            fullName,
-                            gender,
-                            dateOfBirth: dob,
-                            phone,
-                            parentPhone,
-                            parentName,
-                            classId: targetClassId
-                        },
-                        include: { class: true }
+                    results.success.push({
+                        rowIndex,
+                        studentCode: createdStudent.studentCode,
+                        fullName: createdStudent.fullName,
+                        className: createdStudent.class?.className || 'Chưa xếp lớp',
+                        username,
+                        defaultPassword
                     });
-
-                    return st;
-                });
-
-                // 7. Auto assign fee profiles
-                if (createdStudent.classId) {
-                    await autoAssignFeeProfilesForStudent(createdStudent.id, createdStudent.classId).catch(err => {
-                        console.warn(`Fee auto-assign notice for ${createdStudent.studentCode}:`, err.message);
+                } catch (err) {
+                    results.errors.push({
+                        rowIndex,
+                        data: raw,
+                        message: err.message
                     });
                 }
-
-                results.success.push({
-                    rowIndex,
-                    studentCode: createdStudent.studentCode,
-                    fullName: createdStudent.fullName,
-                    className: createdStudent.class?.className || 'Chưa xếp lớp',
-                    username: username,
-                    defaultPassword: defaultPassword
-                });
-            } catch (err) {
-                results.errors.push({
-                    rowIndex,
-                    data: raw,
-                    message: err.message
-                });
-            }
+            }));
         }
 
         // Ghi Audit Log
@@ -349,5 +357,40 @@ export const exportStudentsList = async (req, res) => {
     } catch (error) {
         console.error('Export students list error:', error);
         res.status(500).json({ message: 'Lỗi khi lấy dữ liệu danh sách học sinh: ' + error.message });
+    }
+};
+
+/**
+ * Xuất Sổ gọi tên và ghi điểm (Sổ Cái) chuẩn Bộ GD&ĐT
+ */
+export const getMasterGradebookReport = async (req, res) => {
+    try {
+        const { classId } = req.params;
+        const { semester } = req.query;
+        const reportData = await generateMasterGradebook(classId, semester || 'HK1_2026');
+        res.json({
+            success: true,
+            data: reportData
+        });
+    } catch (error) {
+        console.error('Error generating master gradebook:', error);
+        res.status(500).json({ success: false, message: 'Lỗi khi kết xuất Sổ Cái: ' + error.message });
+    }
+};
+
+/**
+ * Tạo gói dữ liệu chuẩn liên thông Cơ sở dữ liệu ngành (moet.gov.vn)
+ */
+export const getMoetSyncPackage = async (req, res) => {
+    try {
+        const { academicYear, semester } = req.query;
+        const syncPayload = await generateMoetSyncPayload(academicYear || '2026-2027', semester || 'HK1_2026');
+        res.json({
+            success: true,
+            data: syncPayload
+        });
+    } catch (error) {
+        console.error('Error generating MOET sync package:', error);
+        res.status(500).json({ success: false, message: 'Lỗi khi tạo gói dữ liệu ngành: ' + error.message });
     }
 };
