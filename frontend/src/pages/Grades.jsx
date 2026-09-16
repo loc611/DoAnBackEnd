@@ -1,10 +1,12 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Filter, Save, Edit, Lock, Unlock, CheckCircle2, AlertCircle, 
-  Clock, Send, ShieldAlert, X, Eye, FileText, Sparkles, TrendingUp, AlertTriangle 
+  FileSpreadsheet, Sparkles, TrendingUp, Download, Printer, FileText, 
+  BookOpen, Award, Check, X, ShieldAlert 
 } from 'lucide-react';
 import api from '../services/api';
 import Swal from 'sweetalert2';
+import StudentGradeReportCardModal from '../components/StudentGradeReportCardModal';
 
 const SEMESTERS = [
   { id: 'HK1_2026', name: 'Học kỳ 1 (2025 - 2026)' },
@@ -12,895 +14,647 @@ const SEMESTERS = [
   { id: 'CN_2026', name: 'Cả năm (2025 - 2026)' }
 ];
 
-const SUBJECT_KEYS = [
-  { key: 'math', label: 'Toán' },
-  { key: 'literature', label: 'Ngữ văn' },
-  { key: 'english', label: 'Tiếng Anh' },
-  { key: 'physics', label: 'Vật lý' },
-  { key: 'chemistry', label: 'Hóa học' },
-  { key: 'it', label: 'Tin học' }
-];
+// Helper tính toán ĐTBmhk chuẩn Thông tư 22/2021/TT-BGDĐT
+const computeAverageScoreTT22 = (tx1, tx2, tx3, tx4, gk, ck, assessmentType, feedbackResult) => {
+  if (assessmentType === 'feedback') {
+    return { avg: null, isComplete: feedbackResult === 'Đ' || feedbackResult === 'CĐ' };
+  }
+
+  const txList = [tx1, tx2, tx3, tx4]
+    .map(val => (val !== '' && val !== null && val !== undefined ? parseFloat(val) : null))
+    .filter(val => val !== null && !isNaN(val) && val >= 0 && val <= 10);
+
+  const numGk = (gk !== '' && gk !== null && gk !== undefined) ? parseFloat(gk) : null;
+  const numCk = (ck !== '' && ck !== null && ck !== undefined) ? parseFloat(ck) : null;
+
+  const hasGk = numGk !== null && !isNaN(numGk) && numGk >= 0 && numGk <= 10;
+  const hasCk = numCk !== null && !isNaN(numCk) && numCk >= 0 && numCk <= 10;
+
+  if (txList.length === 0 && !hasGk && !hasCk) {
+    return { avg: null, isComplete: false };
+  }
+
+  const totalPoints = txList.reduce((acc, cur) => acc + cur, 0) + (hasGk ? numGk * 2 : 0) + (hasCk ? numCk * 3 : 0);
+  const totalCoefficients = txList.length + (hasGk ? 2 : 0) + (hasCk ? 3 : 0);
+
+  if (totalCoefficients === 0) return { avg: null, isComplete: false };
+
+  const raw = totalPoints / totalCoefficients;
+  const rounded = Math.round(raw * 10) / 10;
+  return { 
+    avg: rounded.toFixed(1), 
+    isComplete: txList.length > 0 && hasGk && hasCk 
+  };
+};
 
 const Grades = () => {
-  const [grades, setGrades] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [selectedClass, setSelectedClass] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedSemester, setSelectedSemester] = useState('HK1_2026');
-  const [boardStatus, setBoardStatus] = useState('draft'); // 'draft' | 'submitted' | 'locked'
-  const [activeUnlock, setActiveUnlock] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(null); // countdown in seconds
   
+  const [students, setStudents] = useState([]);
+  const [boardStatus, setBoardStatus] = useState('draft'); // 'draft' | 'submitted' | 'locked'
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  // Modals
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  const [requestReason, setRequestReason] = useState('');
-  const [requestDuration, setRequestDuration] = useState(120);
-
-  const [showApprovalModal, setShowApprovalModal] = useState(false);
-  const [unlockRequests, setUnlockRequests] = useState([]);
-  const [loadingRequests, setLoadingRequests] = useState(false);
   
-  const rawRole = localStorage.getItem('userRole') || 'student';
-  const userRole = rawRole.toLowerCase();
+  const [isReportCardOpen, setIsReportCardOpen] = useState(false);
+  const [selectedReportStudent, setSelectedReportStudent] = useState(null);
+  
+  const userRole = localStorage.getItem('userRole') || 'student';
   const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-  const isAdmin = ['admin', 'principal', 'vice_principal'].includes(userRole);
-  const isTeacher = ['teacher', 'homeroom_teacher', 'guest_teacher', 'department_head'].includes(userRole);
 
-  // Timer reference
-  const timerRef = useRef(null);
-
+  // 1. Tải danh mục Lớp và Môn học
   useEffect(() => {
-    if (userRole !== 'student') {
-      const fetchClasses = async () => {
-        try {
-          const res = await api.get('/classes');
-          setClasses(res.data || []);
-          if (res.data && res.data.length > 0) {
-            setSelectedClass(res.data[0].id);
-          }
-        } catch (error) {
-          console.error("Failed to fetch classes", error);
+    const fetchMetadata = async () => {
+      try {
+        const [classRes, subRes] = await Promise.all([
+          api.get('/classes'),
+          api.get('/subjects')
+        ]);
+        
+        const classList = classRes.data || [];
+        const subjectList = subRes.data || [];
+
+        setClasses(classList);
+        setSubjects(subjectList);
+
+        if (classList.length > 0 && !selectedClass) {
+          setSelectedClass(classList[0].id);
         }
-      };
-      fetchClasses();
-    } else {
-      if (userData.classId) {
-        setSelectedClass(userData.classId);
+        if (subjectList.length > 0 && !selectedSubject) {
+          setSelectedSubject(subjectList[0].id);
+        }
+      } catch (error) {
+        console.error("Lỗi tải danh mục lớp/môn", error);
       }
-    }
-  }, [userRole, userData.classId]);
+    };
+    fetchMetadata();
+  }, []);
 
-  // Fetch grades & unlock status
-  const fetchGrades = async () => {
-    if (!selectedClass) return;
-    setLoading(true);
-    try {
-      const res = await api.get(`/grades/class/${selectedClass}?semester=${selectedSemester}`);
-      const responseData = res.data;
-      const studentList = Array.isArray(responseData) 
-        ? responseData 
-        : (responseData?.students || []);
-      const overallStatus = responseData?.status || (responseData?.isLocked ? 'locked' : 'draft');
-      const unlockInfo = responseData?.activeUnlock || null;
-
-      const formatted = studentList.map(item => ({
-        id: item.id,
-        studentId: item.studentId,
-        studentCode: item.studentCode || item.id,
-        name: item.name,
-        class: classes.find(c => c.id === selectedClass)?.className || 'Lớp học',
-        status: item.status || 'draft',
-        math: item.scores?.math ?? 0,
-        literature: item.scores?.literature ?? 0,
-        english: item.scores?.english ?? 0,
-        it: item.scores?.it ?? 0,
-        physics: item.scores?.physics ?? 0,
-        chemistry: item.scores?.chemistry ?? 0,
-      }));
-
-      setBoardStatus(overallStatus);
-      setActiveUnlock(unlockInfo);
-      setGrades(formatted);
-
-      // Editing permissions:
-      // Can edit if draft, OR if active unlock window is valid, OR if admin override
-      const canEdit = overallStatus === 'draft' || Boolean(unlockInfo) || isAdmin;
-      setIsEditing(canEdit && userRole !== 'student');
-
-      // Setup countdown timer if active unlock window exists
-      if (unlockInfo?.expiresAt) {
-        const remaining = Math.max(0, Math.floor((new Date(unlockInfo.expiresAt) - new Date()) / 1000));
-        setTimeLeft(remaining);
-      } else {
-        setTimeLeft(null);
+  // 2. Tải bảng điểm môn học chi tiết theo Thông tư 22
+  useEffect(() => {
+    if (!selectedClass || !selectedSubject) return;
+    
+    const fetchSubjectGrades = async () => {
+      setLoading(true);
+      try {
+        const res = await api.get(`/grades/subject/${selectedClass}?subjectId=${selectedSubject}&semester=${selectedSemester}`);
+        if (res.data?.success) {
+          const list = res.data.students || [];
+          setStudents(list);
+          const currentStatus = res.data.gradebookStatus || 'draft';
+          setBoardStatus(currentStatus);
+          setIsEditing(currentStatus === 'draft');
+        }
+      } catch (error) {
+        console.error("Lỗi tải bảng điểm môn", error);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to fetch grades", error);
-    } finally {
-      setLoading(false);
-    }
+    };
+
+    fetchSubjectGrades();
+  }, [selectedClass, selectedSubject, selectedSemester]);
+
+  // Tìm thông tin môn học đang chọn
+  const activeSubject = useMemo(() => {
+    return subjects.find(s => s.id === selectedSubject) || null;
+  }, [subjects, selectedSubject]);
+
+  const isFeedbackSubject = useMemo(() => {
+    if (!activeSubject) return false;
+    const name = activeSubject.name?.toLowerCase() || '';
+    return name.includes('thể chất') || name.includes('trải nghiệm') || name.includes('nghệ thuật') || activeSubject.type === 'Nhận xét';
+  }, [activeSubject]);
+
+  // Xử lý thay đổi điểm cho 1 ô
+  const handleScoreChange = (studentId, field, value) => {
+    setStudents(prev => prev.map(st => {
+      if (st.studentId !== studentId) return st;
+
+      let sanitizedValue = value;
+      if (field !== 'feedbackResult' && field !== 'teacherRemark') {
+        if (value === '') {
+          sanitizedValue = null;
+        } else {
+          let num = parseFloat(value);
+          if (isNaN(num)) num = 0;
+          if (num > 10) num = 10;
+          if (num < 0) num = 0;
+          sanitizedValue = num;
+        }
+      }
+
+      const updated = { ...st, [field]: sanitizedValue };
+      
+      // Tự động tính lại ĐTBmhk theo thời gian thực
+      const calculated = computeAverageScoreTT22(
+        updated.tx1, updated.tx2, updated.tx3, updated.tx4,
+        updated.gk, updated.ck,
+        isFeedbackSubject ? 'feedback' : 'score',
+        updated.feedbackResult
+      );
+
+      updated.avgScore = calculated.avg;
+      return updated;
+    }));
   };
 
-  useEffect(() => {
-    fetchGrades();
-  }, [selectedClass, selectedSemester, classes]);
+  // Lọc học sinh theo từ khóa
+  const filteredStudents = useMemo(() => {
+    if (!searchTerm) return students;
+    const term = searchTerm.toLowerCase();
+    return students.filter(s => 
+      s.fullName.toLowerCase().includes(term) || 
+      s.studentCode.toLowerCase().includes(term)
+    );
+  }, [students, searchTerm]);
 
-  // Countdown timer effect
-  useEffect(() => {
-    if (timeLeft === null || timeLeft <= 0) return;
-
-    timerRef.current = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current);
-          fetchGrades(); // Reload state when window expires
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timerRef.current);
-  }, [timeLeft]);
-
-  // Load unlock requests for BGH / Teachers
-  const fetchUnlockRequests = async () => {
-    try {
-      setLoadingRequests(true);
-      const res = await api.get('/grades/unlock-requests');
-      setUnlockRequests(res.data?.data || []);
-    } catch (error) {
-      console.error('Failed to fetch unlock requests', error);
-    } finally {
-      setLoadingRequests(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isAdmin) {
-      fetchUnlockRequests();
-    }
-  }, [isAdmin]);
-
-  const pendingRequestsCount = useMemo(() => {
-    return unlockRequests.filter(r => r.status === 'pending').length;
-  }, [unlockRequests]);
-
-  const processedGrades = useMemo(() => {
-    let filteredList = grades;
-    if (userRole === 'student') {
-      filteredList = grades.filter(s => s.id === userData.studentCode || s.studentId === userData.id);
-    } else {
-      if (searchTerm) {
-        filteredList = grades.filter(s => 
-          s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-          s.studentCode.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-      }
-    }
-
-    return filteredList.map(student => {
-      const sum = student.math + student.literature + student.english + student.it + student.physics + student.chemistry;
-      const avg = sum / 6;
-      return {
-        ...student,
-        average: avg.toFixed(2),
-        rank: avg >= 8.0 ? 'Giỏi' : avg >= 6.5 ? 'Khá' : avg >= 5.0 ? 'Trung bình' : 'Yếu'
-      };
-    });
-  }, [grades, searchTerm, userRole, userData]);
-
+  // Thống kê nhanh theo Thông tư 22
   const stats = useMemo(() => {
-    if (processedGrades.length === 0) return { count: 0, avg: '0.00', gioikha: 0 };
-    const count = processedGrades.length;
-    const sumAvg = processedGrades.reduce((acc, cur) => acc + parseFloat(cur.average || 0), 0);
-    const avg = (sumAvg / count).toFixed(2);
-    const gioikha = processedGrades.filter(s => s.rank === 'Giỏi' || s.rank === 'Khá').length;
-    const percentGK = ((gioikha / count) * 100).toFixed(0);
-    return { count, avg, percentGK };
-  }, [processedGrades]);
+    if (students.length === 0) return { total: 0, completedCount: 0, avgClass: '0.0', passCount: 0 };
+    const total = students.length;
 
-  const handleGradeChange = (studentId, field, value) => {
-    let numVal = parseFloat(value);
-    if (isNaN(numVal)) numVal = 0;
-    if (numVal > 10) numVal = 10;
-    if (numVal < 0) numVal = 0;
+    if (isFeedbackSubject) {
+      const passCount = students.filter(s => s.feedbackResult === 'Đ').length;
+      return { total, completedCount: students.filter(s => s.feedbackResult).length, passCount, percentPass: ((passCount / total) * 100).toFixed(0) };
+    }
 
-    setGrades(prev => prev.map(s => s.studentId === studentId ? { ...s, [field]: numVal } : s));
-  };
+    const scoredList = students.filter(s => s.avgScore !== null && !isNaN(s.avgScore)).map(s => parseFloat(s.avgScore));
+    const completedCount = scoredList.length;
+    const sum = scoredList.reduce((acc, cur) => acc + cur, 0);
+    const avgClass = completedCount > 0 ? (sum / completedCount).toFixed(1) : '0.0';
+    const gioikha = scoredList.filter(score => score >= 6.5).length;
+    const percentGioiKha = completedCount > 0 ? ((gioikha / completedCount) * 100).toFixed(0) : 0;
 
-  const handleSaveGrades = async (targetStatus, customReason) => {
+    return { total, completedCount, avgClass, gioikha, percentGioiKha };
+  }, [students, isFeedbackSubject]);
+
+  // Lưu bảng điểm
+  const handleSaveGrades = async (targetStatus) => {
     try {
       setSaving(true);
-      const payload = grades.map(g => ({
-        studentId: g.studentId,
-        status: targetStatus,
-        scores: {
-          math: g.math,
-          literature: g.literature,
-          english: g.english,
-          physics: g.physics,
-          chemistry: g.chemistry,
-          it: g.it
-        }
+      const payload = students.map(s => ({
+        studentId: s.studentId,
+        assessmentType: isFeedbackSubject ? 'feedback' : 'score',
+        tx1: s.tx1,
+        tx2: s.tx2,
+        tx3: s.tx3,
+        tx4: s.tx4,
+        gk: s.gk,
+        ck: s.ck,
+        feedbackResult: s.feedbackResult,
+        teacherRemark: s.teacherRemark
       }));
 
-      await api.put(`/grades/class/${selectedClass}`, {
+      const res = await api.put(`/grades/subject/${selectedClass}`, {
+        subjectId: selectedSubject,
         semester: selectedSemester,
         status: targetStatus,
-        grades: payload,
-        reason: customReason
+        grades: payload
       });
 
-      await fetchGrades();
+      if (res.data?.success) {
+        setBoardStatus(targetStatus);
+        setIsEditing(targetStatus === 'draft');
 
-      if (targetStatus === 'locked') {
-        Swal.fire({
-          title: 'Khóa Sổ & Công Bố Thành Công!',
-          text: 'Bảng điểm đã được niêm phong chính thức theo Thông tư 22/2021/TT-BGDĐT. Học sinh và phụ huynh đã có thể tra cứu.',
-          icon: 'success'
-        });
-      } else if (targetStatus === 'submitted') {
-        Swal.fire({
-          title: 'Đã Nộp Bảng Điểm!',
-          text: 'Bảng điểm đã chuyển sang trạng thái nộp cho Ban Giám Hiệu xét duyệt & khóa sổ.',
-          icon: 'success'
-        });
-      } else {
-        Swal.fire('Thành công', 'Đã lưu bản nháp điểm số thành công.', 'success');
+        if (targetStatus === 'locked') {
+          Swal.fire('Đã Niêm Phong!', 'Sổ điểm môn học đã được khóa và công bố chính thức theo Thông tư 22.', 'success');
+        } else if (targetStatus === 'submitted') {
+          Swal.fire('Đã Nộp!', 'Bảng điểm đã được nộp cho Tổ trưởng chuyên môn / Ban Giám Hiệu kiểm duyệt.', 'info');
+        } else {
+          Swal.fire('Thành công', 'Đã lưu nháp bảng điểm thành công.', 'success');
+        }
       }
     } catch (error) {
-      console.error('Failed to save grades', error);
+      console.error('Lỗi khi lưu điểm:', error);
       Swal.fire('Lỗi', error.response?.data?.message || 'Không thể lưu bảng điểm', 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  // Nộp bảng điểm cho BGH
-  const handleSubmitGrades = async () => {
-    const result = await Swal.fire({
-      title: 'Nộp Bảng Điểm Cho Ban Giám Hiệu?',
-      text: 'Sau khi nộp, bảng điểm sẽ được chuyển cho Ban Giám Hiệu rà soát và khóa sổ công bố. Bạn sẽ không thể sửa điểm nếu chưa có phê duyệt mở khóa.',
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#3b82f6',
-      cancelButtonText: 'Kiểm tra lại',
-      confirmButtonText: 'Xác nhận Nộp'
-    });
-
-    if (result.isConfirmed) {
-      handleSaveGrades('submitted');
-    }
-  };
-
-  // Khóa sổ & Công bố toàn trường (Chỉ BGH)
-  const handleLockPublish = async () => {
-    const result = await Swal.fire({
-      title: 'Khóa Sổ & Công Bố Toàn Trường?',
-      text: 'Theo Thông tư 22/2021/TT-BGDĐT, thao tác này sẽ niêm phong sổ điểm và công bố điểm cho học sinh trên hệ thống. Mọi điều chỉnh sau thời điểm này đều phải qua phê duyệt mở khóa tạm thời.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#059669',
-      cancelButtonText: 'Hủy',
-      confirmButtonText: 'Khóa Sổ & Công Bố Ngay'
-    });
-
-    if (result.isConfirmed) {
-      handleSaveGrades('locked');
-    }
-  };
-
-  // GV Gửi yêu cầu mở khóa
-  const handleSendUnlockRequest = async (e) => {
-    e.preventDefault();
-    if (!requestReason || requestReason.trim().length < 5) {
-      Swal.fire('Cảnh báo', 'Vui lòng cung cấp lý do điều chỉnh điểm cụ thể (tối thiểu 5 ký tự)', 'warning');
-      return;
-    }
-
-    try {
-      await api.post('/grades/unlock-requests', {
-        classId: selectedClass,
-        semester: selectedSemester,
-        reason: requestReason.trim(),
-        durationMinutes: requestDuration
-      });
-
-      setShowRequestModal(false);
-      setRequestReason('');
-      Swal.fire({
-        title: 'Đã Gửi Đề Xuất!',
-        text: 'Yêu cầu mở khóa sổ điểm đã được chuyển đến Ban Giám Hiệu. Bạn sẽ nhận được thông báo khi được phê duyệt.',
-        icon: 'success'
-      });
-      if (isAdmin) fetchUnlockRequests();
-    } catch (error) {
-      console.error('Failed to create unlock request', error);
-      Swal.fire('Lỗi', error.response?.data?.message || 'Không thể gửi yêu cầu', 'error');
-    }
-  };
-
-  // BGH Phê duyệt mở khóa
-  const handleApproveRequest = async (requestId, duration = 120) => {
-    try {
-      await api.put(`/grades/unlock-requests/${requestId}/approve`, {
-        durationMinutes: duration,
-        reason: 'BGH Phê chuẩn mở khóa tạm thời'
-      });
-      Swal.fire('Thành công', `Đã cấp quyền mở khóa sổ điểm trong ${duration} phút`, 'success');
-      fetchUnlockRequests();
-      fetchGrades();
-    } catch (error) {
-      Swal.fire('Lỗi', error.response?.data?.message || 'Không thể duyệt yêu cầu', 'error');
-    }
-  };
-
-  // BGH Từ chối mở khóa
-  const handleRejectRequest = async (requestId) => {
+  // Mở khóa bảng điểm
+  const handleUnlockBoard = async () => {
     const { value: reason } = await Swal.fire({
-      title: 'Từ chối mở khóa sổ điểm',
+      title: 'Mở khóa sổ điểm môn học?',
+      text: 'Sổ điểm sẽ chuyển về trạng thái Lưu Nháp để giáo viên điều chỉnh. Thao tác này bắt buộc có lý do và sẽ ghi nhận vào Audit Log.',
       input: 'textarea',
-      inputPlaceholder: 'Nhập lý do từ chối...',
-      inputValidator: (value) => {
-        if (!value || value.trim().length < 5) {
-          return 'Vui lòng nhập lý do từ chối cụ thể!';
+      inputLabel: 'Lý do mở khóa (Bắt buộc):',
+      inputPlaceholder: 'Nhập lý do (VD: Phúc khảo điểm thi, đính chính sai sót nhập liệu...)',
+      inputValidator: (val) => {
+        if (!val || val.trim().length < 5) {
+          return 'Vui lòng nhập lý do tối thiểu 5 ký tự!';
         }
       },
+      icon: 'warning',
       showCancelButton: true,
-      confirmButtonColor: '#e11d48',
-      confirmButtonText: 'Xác nhận Từ chối',
-      cancelButtonText: 'Hủy'
+      confirmButtonColor: '#f59e0b',
+      confirmButtonText: 'Xác nhận mở khóa'
     });
 
     if (reason) {
       try {
-        await api.put(`/grades/unlock-requests/${requestId}/reject`, {
-          rejectionReason: reason
+        setSaving(true);
+        const res = await api.put(`/grades/subject/${selectedClass}/unlock`, {
+          subjectId: selectedSubject,
+          semester: selectedSemester,
+          reason: reason.trim()
         });
-        Swal.fire('Đã từ chối', 'Đã gửi thông báo từ chối tới giáo viên', 'info');
-        fetchUnlockRequests();
+
+        if (res.data?.success) {
+          setBoardStatus('draft');
+          setIsEditing(true);
+          Swal.fire('Đã mở khóa!', 'Sổ điểm đã được mở khóa để giáo viên chỉnh sửa.', 'success');
+        }
       } catch (error) {
-        Swal.fire('Lỗi', error.response?.data?.message || 'Không thể từ chối', 'error');
+        Swal.fire('Lỗi', error.response?.data?.message || 'Không thể mở khóa sổ điểm', 'error');
+      } finally {
+        setSaving(false);
       }
     }
   };
 
-  // Format time remaining MM:SS
-  const formatCountdown = (secs) => {
-    if (secs === null || secs <= 0) return '00:00';
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  // Xuất file CSV / Excel chuẩn Thông tư 22
+  const handleExportCSV = () => {
+    if (students.length === 0) return;
+    const currentClassObj = classes.find(c => c.id === selectedClass);
+    const className = currentClassObj?.className || 'Lop';
+    const subName = activeSubject?.name || 'Mon';
+
+    let csvContent = `STT,Mã Học Sinh,Họ và Tên,Lớp,Môn Học,ĐĐGtx1,ĐĐGtx2,ĐĐGtx3,ĐĐGtx4,ĐĐGgk,ĐĐGck,ĐTB Môn,Đánh Giá Nhận Xét,Trạng Thái\n`;
+    students.forEach((s, idx) => {
+      const evalText = isFeedbackSubject ? (s.feedbackResult || 'Chưa đánh giá') : (s.avgScore || '-');
+      csvContent += `"${idx + 1}","${s.studentCode}","${s.fullName}","${className}","${subName}","${s.tx1 ?? ''}","${s.tx2 ?? ''}","${s.tx3 ?? ''}","${s.tx4 ?? ''}","${s.gk ?? ''}","${s.ck ?? ''}","${evalText}","${s.teacherRemark || ''}","${boardStatus}"\n`;
+    });
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `BangDiem_TT22_${className}_${subName}_${selectedSemester}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
+  const isManagement = userRole === 'admin' || userRole === 'principal' || userData?.position?.includes('Trưởng khoa') || userData?.position?.includes('Ban giám hiệu');
+
   return (
-    <div className="space-y-6 font-sans">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 animate-fadeIn pb-12">
+      {/* Header & Tiêu chuẩn Thông tư 22 */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 p-6 rounded-2xl text-white shadow-xl">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight">Sổ Điểm Điện Tử</h2>
-            
-            {/* Status Badges */}
-            {boardStatus === 'locked' && !activeUnlock && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-300 shadow-sm">
-                <Lock size={13} /> Đã Khóa & Công Bố (Thông tư 22)
-              </span>
-            )}
-
-            {boardStatus === 'submitted' && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-xs font-bold border border-blue-300 shadow-sm">
-                <Send size={13} /> Đã Nộp Cho BGH (Chờ Khóa Sổ)
-              </span>
-            )}
-
-            {boardStatus === 'draft' && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold border border-amber-300 shadow-sm">
-                <Edit size={13} /> Bản Nháp (Đang Nhập Điểm)
-              </span>
-            )}
-
-            {activeUnlock && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-xs font-bold border border-rose-300 shadow-sm animate-pulse">
-                <Unlock size={13} /> Đang Mở Khóa Tạm Thời ({formatCountdown(timeLeft)})
-              </span>
-            )}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="px-3 py-1 bg-blue-500/20 text-blue-300 text-xs font-semibold rounded-full border border-blue-400/30 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" /> Chuẩn Thông tư 22/2021/TT-BGDĐT
+            </span>
+            <span className={`px-3 py-1 text-xs font-semibold rounded-full flex items-center gap-1.5 ${
+              boardStatus === 'locked' 
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                : (boardStatus === 'submitted' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-500/20 text-slate-300 border border-slate-500/30')
+            }`}>
+              {boardStatus === 'locked' ? <Lock className="w-3.5 h-3.5" /> : (boardStatus === 'submitted' ? <AlertCircle className="w-3.5 h-3.5" /> : <Edit className="w-3.5 h-3.5" />)}
+              {boardStatus === 'locked' ? 'Đã niêm phong công bố' : (boardStatus === 'submitted' ? 'Đã nộp chờ duyệt' : 'Bản nháp')}
+            </span>
           </div>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
-            Quản trị học vụ chuẩn Thông tư 22/2021/TT-BGDĐT: Giáo viên nộp điểm → Ban Giám Hiệu khóa sổ & công bố kết quả
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Sổ Điểm Bộ Môn Điện Tử</h1>
+          <p className="text-slate-300 text-sm mt-1">
+            Đánh giá thường xuyên (ĐĐGtx) & Đánh giá định kỳ (ĐĐGgk, ĐĐGck) theo quy chế THPT
           </p>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          {/* Nút xem danh sách yêu cầu mở khóa cho BGH */}
-          {isAdmin && (
-            <button
-              onClick={() => { fetchUnlockRequests(); setShowApprovalModal(true); }}
-              className="relative px-3.5 py-2 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <Eye size={15} /> Quản Lý Yêu Cầu Mở Khóa
-              {pendingRequestsCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-rose-600 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-md animate-bounce">
-                  {pendingRequestsCount}
-                </span>
-              )}
-            </button>
-          )}
-
-          {userRole !== 'student' && (
+        {/* Nút hành động */}
+        <div className="flex flex-wrap items-center gap-2">
+          {boardStatus === 'locked' ? (
+            isManagement && (
+              <button
+                onClick={handleUnlockBoard}
+                disabled={saving}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold rounded-xl flex items-center gap-2 shadow-lg transition-all"
+              >
+                <Unlock className="w-4 h-4" /> Mở khóa đặc cách
+              </button>
+            )
+          ) : (
             <>
-              {/* Khi đang trong cửa sổ mở khóa tạm */}
-              {activeUnlock && (
+              <button
+                onClick={() => handleSaveGrades('draft')}
+                disabled={saving || !isEditing}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-xl flex items-center gap-2 border border-white/20 transition-all disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" /> Lưu nháp
+              </button>
+              <button
+                onClick={() => handleSaveGrades('submitted')}
+                disabled={saving || !isEditing}
+                className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold rounded-xl flex items-center gap-2 shadow-lg transition-all disabled:opacity-50"
+              >
+                <Check className="w-4 h-4" /> Nộp bảng điểm
+              </button>
+              {isManagement && (
                 <button
-                  onClick={() => handleSaveGrades('locked', 'Hoàn tất cập nhật và tái khóa sổ')}
+                  onClick={() => handleSaveGrades('locked')}
                   disabled={saving}
-                  className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-rose-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold rounded-xl flex items-center gap-2 shadow-lg transition-all"
                 >
-                  <Lock size={15} /> Lưu & Tái Khóa Sổ Điểm
+                  <Lock className="w-4 h-4" /> Khóa & Công bố
                 </button>
-              )}
-
-              {/* Khi sổ điểm đang KHÓA và KHÔNG có activeUnlock */}
-              {boardStatus === 'locked' && !activeUnlock && (
-                <>
-                  {isTeacher && (
-                    <button
-                      onClick={() => setShowRequestModal(true)}
-                      className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs sm:text-sm font-bold shadow-md shadow-amber-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Send size={15} /> Gửi Đơn Xin Sửa Điểm
-                    </button>
-                  )}
-                  {isAdmin && (
-                    <button
-                      onClick={() => handleSaveGrades('draft', 'BGH đặc cách chuyển về trạng thái nháp')}
-                      disabled={saving}
-                      className="px-4 py-2.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Unlock size={15} /> BGH Đặc Cách Mở Khóa
-                    </button>
-                  )}
-                </>
-              )}
-
-              {/* Khi sổ điểm đang DRAFT */}
-              {boardStatus === 'draft' && (
-                <>
-                  <button
-                    onClick={() => handleSaveGrades('draft')}
-                    disabled={saving}
-                    className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Save size={15} /> Lưu Nháp
-                  </button>
-
-                  <button
-                    onClick={handleSubmitGrades}
-                    disabled={saving}
-                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-blue-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Send size={15} /> Nộp Cho BGH
-                  </button>
-
-                  {isAdmin && (
-                    <button
-                      onClick={handleLockPublish}
-                      disabled={saving}
-                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <CheckCircle2 size={15} /> BGH Khóa & Công Bố
-                    </button>
-                  )}
-                </>
-              )}
-
-              {/* Khi sổ điểm đang SUBMITTED */}
-              {boardStatus === 'submitted' && (
-                <>
-                  {isAdmin ? (
-                    <>
-                      <button
-                        onClick={() => handleSaveGrades('draft', 'BGH trả về yêu cầu GV rà soát lại')}
-                        disabled={saving}
-                        className="px-4 py-2.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Edit size={15} /> Trả Về Cho GV Sửa
-                      </button>
-                      <button
-                        onClick={handleLockPublish}
-                        disabled={saving}
-                        className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <CheckCircle2 size={15} /> BGH Phê Duyệt & Khóa Sổ
-                      </button>
-                    </>
-                  ) : (
-                    <span className="text-xs font-semibold text-slate-500 italic px-2">
-                      Đã nộp thành công. Vui lòng chờ BGH duyệt & khóa sổ.
-                    </span>
-                  )}
-                </>
               )}
             </>
           )}
-        </div>
-      </div>
 
-      {/* Active TTL Window Banner */}
-      {activeUnlock && (
-        <div className="bg-gradient-to-r from-rose-50 via-amber-50 to-rose-50 border border-rose-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
-              <Clock size={22} className="animate-spin" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="font-extrabold text-rose-900 text-sm">CỬA SỔ MỞ KHÓA SỔ ĐIỂM TẠM THỜI (TTL)</h4>
-                <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white font-mono font-black text-xs">
-                  {formatCountdown(timeLeft)}
-                </span>
-              </div>
-              <p className="text-xs text-rose-800 mt-0.5 font-medium">
-                Ban Giám Hiệu đã phê duyệt điều chỉnh. Lý do: <span className="italic font-bold">"{activeUnlock.reason}"</span>. Hệ thống sẽ tự động niêm phong lại khi đồng hồ kết thúc.
-              </p>
-            </div>
-          </div>
           <button
-            onClick={() => handleSaveGrades('locked', 'Hoàn tất cập nhật điểm trong cửa sổ mở khóa')}
-            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold shadow-sm flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+            onClick={handleExportCSV}
+            className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-all"
+            title="Xuất CSV chuẩn TT22"
           >
-            <CheckCircle2 size={14} /> Hoàn Tất & Tái Khóa Sổ
+            <Download className="w-4 h-4" />
           </button>
         </div>
-      )}
+      </div>
 
-      {/* Class Statistics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-            <TrendingUp size={22} />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 font-medium">Sĩ số bảng điểm</p>
-            <p className="text-xl font-extrabold text-slate-800">{stats.count} Học sinh</p>
-          </div>
+      {/* Thanh bộ lọc: Học kỳ + Môn học + Lớp học */}
+      <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Học kỳ & Niên khóa</label>
+          <select
+            value={selectedSemester}
+            onChange={(e) => setSelectedSemester(e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+          >
+            {SEMESTERS.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
         </div>
-        <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-            <Sparkles size={22} />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 font-medium">Điểm TB Toàn Lớp</p>
-            <p className="text-xl font-extrabold text-slate-800">{stats.avg} / 10</p>
-          </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Môn học giảng dạy</label>
+          <select
+            value={selectedSubject}
+            onChange={(e) => setSelectedSubject(e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+          >
+            {subjects.map(s => (
+              <option key={s.id} value={s.id}>{s.name} ({s.subjectCode}) - {s.type}</option>
+            ))}
+          </select>
         </div>
-        <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-            <CheckCircle2 size={22} />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 font-medium">Tỷ lệ Đạt Giỏi - Khá</p>
-            <p className="text-xl font-extrabold text-slate-800">{stats.percentGK}%</p>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Lớp học phân công</label>
+          <select
+            value={selectedClass}
+            onChange={(e) => setSelectedClass(e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+          >
+            {classes.map(c => (
+              <option key={c.id} value={c.id}>{c.className} (Khối {c.grade})</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Tìm kiếm học sinh</label>
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Tên hoặc mã HS..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
         </div>
       </div>
 
-      {/* Main Table Container */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
-        {/* Toolbar */}
-        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row gap-4 items-center justify-between bg-slate-50/50">
-          <div className="relative w-full sm:w-80">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search size={18} className="text-slate-400" />
-            </div>
-            <input
-              type="text"
-              placeholder="Tìm kiếm mã HS, họ tên..."
-              className="pl-10 pr-4 py-2.5 w-full border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white font-medium"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              disabled={userRole === 'student'}
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-            {userRole !== 'student' && (
-              <select 
-                className="px-4 py-2.5 border border-slate-200 rounded-xl text-slate-700 outline-none text-sm bg-white font-semibold"
-                value={selectedClass}
-                onChange={(e) => setSelectedClass(e.target.value)}
-              >
-                {classes.map(c => (
-                  <option key={c.id} value={c.id}>Lớp {c.className} (Khối {c.grade})</option>
-                ))}
-              </select>
-            )}
-
-            <select
-              className="px-4 py-2.5 border border-slate-200 rounded-xl text-slate-700 outline-none text-sm bg-white font-semibold"
-              value={selectedSemester}
-              onChange={(e) => setSelectedSemester(e.target.value)}
-            >
-              {SEMESTERS.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
+      {/* Thẻ tóm tắt chỉ số */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Sĩ số lớp</p>
+          <p className="text-xl font-bold text-slate-900 dark:text-white mt-1">{stats.total} học sinh</p>
         </div>
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Đã hoàn thành điểm</p>
+          <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">{stats.completedCount} / {stats.total}</p>
+        </div>
+        {!isFeedbackSubject ? (
+          <>
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Điểm TB môn cả lớp</p>
+              <p className="text-xl font-bold text-blue-600 dark:text-blue-400 mt-1">{stats.avgClass} / 10</p>
+            </div>
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Tỷ lệ Khá - Giỏi (&ge; 6.5)</p>
+              <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{stats.percentGioiKha}%</p>
+            </div>
+          </>
+        ) : (
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 col-span-2">
+            <p className="text-xs text-slate-500 dark:text-slate-400">Tỷ lệ Đạt (Đ)</p>
+            <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{stats.passCount} ({stats.percentPass}%)</p>
+          </div>
+        )}
+      </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="p-12 text-center text-slate-500 font-medium">Đang tải bảng điểm...</div>
-          ) : (
-            <table className="w-full text-center text-sm text-slate-600 whitespace-nowrap">
-              <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-100">
+      {/* Bảng điểm chi tiết Thông tư 22 */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+        {loading ? (
+          <div className="p-12 text-center text-slate-500">Đang nạp bảng điểm Thông tư 22...</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 uppercase border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-4 py-4 text-left">Mã HS</th>
-                  <th className="px-4 py-4 text-left min-w-[170px]">Họ và tên</th>
-                  <th className="px-4 py-4">Toán</th>
-                  <th className="px-4 py-4">Văn</th>
-                  <th className="px-4 py-4">Anh</th>
-                  <th className="px-4 py-4">Lý</th>
-                  <th className="px-4 py-4">Hóa</th>
-                  <th className="px-4 py-4">Tin</th>
-                  <th className="px-4 py-4 bg-indigo-50/70 text-indigo-900 font-extrabold">Điểm TB</th>
-                  <th className="px-4 py-4">Xếp loại</th>
+                  <th className="px-4 py-3 text-center w-12" rowSpan={2}>STT</th>
+                  <th className="px-4 py-3 w-28" rowSpan={2}>Mã HS</th>
+                  <th className="px-4 py-3 min-w-[180px]" rowSpan={2}>Họ và Tên</th>
+                  {!isFeedbackSubject ? (
+                    <>
+                      <th className="px-4 py-2 text-center border-b border-slate-200 dark:border-slate-700" colSpan={4}>
+                        ĐĐG Thường xuyên (Hệ số 1)
+                      </th>
+                      <th className="px-4 py-2 text-center border-b border-slate-200 dark:border-slate-700 w-24">
+                        ĐĐG Giữa kỳ (x2)
+                      </th>
+                      <th className="px-4 py-2 text-center border-b border-slate-200 dark:border-slate-700 w-24">
+                        ĐĐG Cuối kỳ (x3)
+                      </th>
+                      <th className="px-4 py-3 text-center w-28 bg-blue-50/50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400" rowSpan={2}>
+                        ĐTB Môn HK
+                      </th>
+                    </>
+                  ) : (
+                    <th className="px-4 py-3 text-center w-36" rowSpan={2}>Đánh giá nhận xét</th>
+                  )}
+                  <th className="px-4 py-3 min-w-[200px]" rowSpan={2}>Nhận xét của GV</th>
+                  <th className="px-4 py-3 text-center w-20" rowSpan={2}>Chi tiết</th>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {processedGrades.map((student) => (
-                  <tr key={student.id} className="hover:bg-indigo-50/40 transition-colors">
-                    <td className="px-4 py-4 font-mono font-bold text-indigo-700 text-left">{student.studentCode}</td>
-                    <td className="px-4 py-4 font-bold text-slate-900 text-left">{student.name}</td>
-                    
-                    {/* Grade Inputs */}
-                    {SUBJECT_KEYS.map(({ key }) => (
-                      <td key={key} className="px-2 py-3">
-                        {isEditing && userRole !== 'student' ? (
-                          <input 
-                            type="number" 
-                            min="0" max="10" step="0.1"
-                            className="w-14 px-2 py-1.5 text-center font-bold text-slate-800 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-slate-50 focus:bg-white text-sm"
-                            value={student[key]}
-                            onChange={(e) => handleGradeChange(student.studentId, key, e.target.value)}
-                          />
-                        ) : (
-                          <span className={`font-bold ${student[key] < 5 ? 'text-rose-500' : 'text-slate-700'}`}>
-                            {student[key]}
-                          </span>
-                        )}
-                      </td>
-                    ))}
-                    
-                    <td className="px-4 py-4 font-black text-indigo-700 bg-indigo-50/40 text-base">
-                      {student.average}
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                        student.rank === 'Giỏi' ? 'bg-emerald-100 text-emerald-800' :
-                        student.rank === 'Khá' ? 'bg-blue-100 text-blue-800' :
-                        student.rank === 'Trung bình' ? 'bg-amber-100 text-amber-800' :
-                        'bg-rose-100 text-rose-800'
-                      }`}>
-                        {student.rank}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {processedGrades.length === 0 && (
+                {!isFeedbackSubject && (
                   <tr>
-                    <td colSpan="10" className="px-4 py-12 text-slate-400 text-center font-medium">Không có dữ liệu điểm cho lớp này</td>
+                    <th className="px-2 py-1.5 text-center text-slate-500 w-16">TX 1</th>
+                    <th className="px-2 py-1.5 text-center text-slate-500 w-16">TX 2</th>
+                    <th className="px-2 py-1.5 text-center text-slate-500 w-16">TX 3</th>
+                    <th className="px-2 py-1.5 text-center text-slate-500 w-16">TX 4</th>
+                    <th className="px-2 py-1.5 text-center text-slate-500 w-24">Giữa kỳ</th>
+                    <th className="px-2 py-1.5 text-center text-slate-500 w-24">Cuối kỳ</th>
                   </tr>
+                )}
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                {filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="p-8 text-center text-slate-500">
+                      Không tìm thấy học sinh nào trong lớp học này.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStudents.map((st, idx) => (
+                    <tr key={st.studentId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                      <td className="px-4 py-3 text-center text-slate-400">{idx + 1}</td>
+                      <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-600 dark:text-slate-300">{st.studentCode}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{st.fullName}</td>
+
+                      {!isFeedbackSubject ? (
+                        <>
+                          {/* Điểm TX1-4 */}
+                          {['tx1', 'tx2', 'tx3', 'tx4'].map((colKey) => (
+                            <td key={colKey} className="px-2 py-2 text-center">
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="10"
+                                disabled={!isEditing}
+                                value={st[colKey] ?? ''}
+                                onChange={(e) => handleScoreChange(st.studentId, colKey, e.target.value)}
+                                className={`w-14 text-center py-1 text-xs font-semibold rounded-lg border transition-all ${
+                                  !isEditing 
+                                    ? 'bg-transparent border-transparent text-slate-700 dark:text-slate-300' 
+                                    : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white'
+                                }`}
+                              />
+                            </td>
+                          ))}
+
+                          {/* Giữa kỳ */}
+                          <td className="px-2 py-2 text-center">
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="10"
+                              disabled={!isEditing}
+                              value={st.gk ?? ''}
+                              onChange={(e) => handleScoreChange(st.studentId, 'gk', e.target.value)}
+                              className={`w-16 text-center py-1 text-xs font-bold rounded-lg border transition-all ${
+                                !isEditing 
+                                  ? 'bg-transparent border-transparent text-indigo-700 dark:text-indigo-300' 
+                                  : 'bg-indigo-50/30 dark:bg-indigo-950/30 border-indigo-300 dark:border-indigo-700 focus:ring-2 focus:ring-indigo-500 text-indigo-900 dark:text-indigo-200'
+                              }`}
+                            />
+                          </td>
+
+                          {/* Cuối kỳ */}
+                          <td className="px-2 py-2 text-center">
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="10"
+                              disabled={!isEditing}
+                              value={st.ck ?? ''}
+                              onChange={(e) => handleScoreChange(st.studentId, 'ck', e.target.value)}
+                              className={`w-16 text-center py-1 text-xs font-bold rounded-lg border transition-all ${
+                                !isEditing 
+                                  ? 'bg-transparent border-transparent text-purple-700 dark:text-purple-300' 
+                                  : 'bg-purple-50/30 dark:bg-purple-950/30 border-purple-300 dark:border-purple-700 focus:ring-2 focus:ring-purple-500 text-purple-900 dark:text-purple-200'
+                              }`}
+                            />
+                          </td>
+
+                          {/* Điểm TB Môn HK (Tính tự động theo TT22) */}
+                          <td className="px-4 py-3 text-center bg-blue-50/30 dark:bg-blue-950/10">
+                            <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-bold ${
+                              st.avgScore === null 
+                                ? 'text-slate-400' 
+                                : parseFloat(st.avgScore) >= 8.0 
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+                                  : parseFloat(st.avgScore) >= 6.5
+                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                                    : parseFloat(st.avgScore) >= 5.0
+                                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                                      : 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300'
+                            }`}>
+                              {st.avgScore !== null ? st.avgScore : '-'}
+                            </span>
+                          </td>
+                        </>
+                      ) : (
+                        /* Môn Đánh giá nhận xét (Thể dục, HĐTN) */
+                        <td className="px-4 py-3 text-center">
+                          <select
+                            disabled={!isEditing}
+                            value={st.feedbackResult || ''}
+                            onChange={(e) => handleScoreChange(st.studentId, 'feedbackResult', e.target.value)}
+                            className="px-3 py-1 text-xs font-bold rounded-lg border bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 outline-none"
+                          >
+                            <option value="">Chưa đánh giá</option>
+                            <option value="Đ">Đạt (Đ)</option>
+                            <option value="CĐ">Chưa đạt (CĐ)</option>
+                          </select>
+                        </td>
+                      )}
+
+                      {/* Nhận xét giáo viên */}
+                      <td className="px-4 py-2">
+                        <input
+                          type="text"
+                          disabled={!isEditing}
+                          value={st.teacherRemark || ''}
+                          placeholder="Nhận xét chuyên môn..."
+                          onChange={(e) => handleScoreChange(st.studentId, 'teacherRemark', e.target.value)}
+                          className="w-full text-xs px-2 py-1 rounded border bg-transparent border-transparent focus:border-slate-300 dark:focus:border-slate-700 outline-none text-slate-700 dark:text-slate-300"
+                        />
+                      </td>
+
+                      {/* Nút xem phiếu điểm cá nhân */}
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => {
+                            setSelectedReportStudent({ ...st, id: st.studentCode, class: classes.find(c => c.id === selectedClass)?.className });
+                            setIsReportCardOpen(true);
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                          title="Xem phiếu điểm cá nhân"
+                        >
+                          <FileText className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Modal: Giáo viên gửi đề xuất mở khóa sửa điểm */}
-      {showRequestModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                  <ShieldAlert size={20} />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-800 text-lg">Đơn Đề Xuất Mở Khóa Sổ Điểm</h3>
-                  <p className="text-xs text-slate-500 font-medium">Theo Điều 21 Thông tư 22/2021/TT-BGDĐT</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowRequestModal(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSendUnlockRequest} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Lý do giải trình điều chỉnh điểm <span className="text-rose-500">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  value={requestReason}
-                  onChange={(e) => setRequestReason(e.target.value)}
-                  placeholder="Ví dụ: Nhập sai điểm bài kiểm tra 15 phút của học sinh Nguyễn Văn A; kèm bài kiểm tra giấy đã đối soát..."
-                  className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Thời lượng mở khóa đề xuất (Phút)
-                </label>
-                <select
-                  value={requestDuration}
-                  onChange={(e) => setRequestDuration(Number(e.target.value))}
-                  className="w-full p-2.5 border border-slate-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none"
-                >
-                  <option value={60}>60 phút (1 giờ)</option>
-                  <option value={120}>120 phút (2 giờ - Khuyến nghị)</option>
-                  <option value={240}>240 phút (4 giờ)</option>
-                </select>
-              </div>
-
-              <div className="p-3 rounded-xl bg-amber-50 text-amber-900 border border-amber-200 text-xs font-medium">
-                ⚠️ Mọi thao tác sửa điểm trong Cửa sổ mở khóa sẽ được hệ thống ghi nhận vào <strong>Nhật ký kiểm toán (Audit Log)</strong> phục vụ công tác thanh tra học vụ.
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowRequestModal(false)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50"
-                >
-                  Hủy bỏ
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 flex items-center gap-1.5"
-                >
-                  <Send size={14} /> Gửi Đề Xuất Lên BGH
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: BGH Phê duyệt danh sách yêu cầu mở khóa */}
-      {showApprovalModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl border border-slate-100 max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <ShieldAlert size={20} />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-800 text-lg">Danh Sách Yêu Cầu Mở Khóa Sổ Điểm</h3>
-                  <p className="text-xs text-slate-500 font-medium">Ban Giám Hiệu xem xét và cấp quyền mở khóa tạm thời (TTL)</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowApprovalModal(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="overflow-y-auto my-4 space-y-3 flex-1 pr-1">
-              {loadingRequests ? (
-                <div className="p-8 text-center text-slate-400 font-medium">Đang tải danh sách...</div>
-              ) : unlockRequests.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 font-medium">Không có yêu cầu mở khóa nào</div>
-              ) : (
-                unlockRequests.map((req) => (
-                  <div 
-                    key={req.id} 
-                    className={`p-4 rounded-2xl border transition-all ${
-                      req.status === 'pending' 
-                        ? 'bg-amber-50/40 border-amber-200 shadow-sm' 
-                        : req.status === 'approved' 
-                          ? 'bg-emerald-50/30 border-emerald-200' 
-                          : 'bg-slate-50 border-slate-200'
-                    }`}
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-slate-900 text-sm">
-                          Lớp {req.class?.className} ({req.semester})
-                        </span>
-                        <span className="text-xs font-medium text-slate-500">
-                          - GV: {req.teacher?.fullName} ({req.teacher?.teacherCode})
-                        </span>
-                      </div>
-                      <div>
-                        {req.status === 'pending' && (
-                          <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold border border-amber-300">
-                            Chờ xét duyệt
-                          </span>
-                        )}
-                        {req.status === 'approved' && (
-                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-300">
-                            Đã phê chuẩn ({req.durationMinutes}p)
-                          </span>
-                        )}
-                        {req.status === 'rejected' && (
-                          <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 text-xs font-bold border border-rose-300">
-                            Đã từ chối
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-2 text-xs font-medium text-slate-700 bg-white/70 p-2.5 rounded-xl border border-slate-200/60">
-                      <strong>Lý do giải trình:</strong> {req.reason}
-                    </div>
-
-                    {req.status === 'approved' && req.expiresAt && (
-                      <div className="mt-2 text-[11px] font-bold text-emerald-700 flex items-center gap-1">
-                        <Clock size={12} /> Hạn mở khóa đến: {new Date(req.expiresAt).toLocaleString('vi-VN')}
-                      </div>
-                    )}
-
-                    {req.status === 'rejected' && req.rejectionReason && (
-                      <div className="mt-2 text-[11px] font-bold text-rose-700">
-                        Lý do từ chối: {req.rejectionReason}
-                      </div>
-                    )}
-
-                    {req.status === 'pending' && (
-                      <div className="mt-3 flex items-center justify-end gap-2 pt-2 border-t border-amber-200/60">
-                        <button
-                          onClick={() => handleRejectRequest(req.id)}
-                          className="px-3 py-1.5 rounded-xl border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-bold"
-                        >
-                          Từ chối
-                        </button>
-                        <button
-                          onClick={() => handleApproveRequest(req.id, 60)}
-                          className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold"
-                        >
-                          Duyệt 60 phút
-                        </button>
-                        <button
-                          onClick={() => handleApproveRequest(req.id, 120)}
-                          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm"
-                        >
-                          Duyệt 120 phút (Chuẩn)
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="flex items-center justify-end border-t border-slate-100 pt-3">
-              <button
-                onClick={() => setShowApprovalModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Modal Phiếu điểm học sinh */}
+      {isReportCardOpen && (
+        <StudentGradeReportCardModal
+          isOpen={isReportCardOpen}
+          onClose={() => setIsReportCardOpen(false)}
+          student={selectedReportStudent}
+          semester={selectedSemester}
+          semesterName={SEMESTERS.find(s => s.id === selectedSemester)?.name || selectedSemester}
+        />
       )}
     </div>
   );

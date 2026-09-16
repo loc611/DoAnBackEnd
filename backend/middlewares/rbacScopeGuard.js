@@ -1,8 +1,11 @@
 import prisma from '../prismaClient.js';
 import AuditLogService from '../services/auditLogService.js';
+import { CORE_ROLE_PERMISSION_MATRIX } from '../utils/seedRbacScope.js';
 
 /**
  * 2-Tier Authorization Guard (RBAC + Scope-based)
+ * Tầng 1: Kiểm tra RBAC (Người dùng có quyền trên loại tài nguyên và hành động không)
+ * Tầng 2: Kiểm tra Scope (Người dùng có được phân công phụ trách đúng lớp, môn, học sinh đó không)
  * @param {string} action - Hành động ('read', 'write', 'delete', 'override', 'batch')
  * @param {string} resourceType - Loại tài nguyên ('grade', 'attendance', 'conduct', 'student_profile', 'export', 'tuition', 'schedule')
  * @param {Function} [resourceExtractor] - Hàm trích xuất context cụ thể (classId, subjectId, studentId, schoolYearId, semester)
@@ -20,7 +23,6 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
       // ============================================================
       // 🌟 TẦNG 1: ROLE-BASED ACCESS CONTROL (RBAC)
       // ============================================================
-      // Lấy tất cả các Roles đang kích hoạt của User (Hỗ trợ Multi-Role nhiều-nhiều)
       const userRoles = await prisma.userRole.findMany({
         where: { userId: user.id },
         include: {
@@ -34,37 +36,49 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
         }
       });
 
-      // Kiểm tra xem có bất kỳ Role nào sở hữu Permission `resourceType:action` không
-      const hasRbacPermission = userRoles.some(ur => 
+      const roleNames = [
+        user.role,
+        ...userRoles.map(ur => ur.role?.name)
+      ].filter(Boolean).map(r => r.toLowerCase());
+
+      const isAdmin = roleNames.includes('admin') || roleNames.includes('principal') || roleNames.includes('it_admin');
+
+      // Admin / Hiệu trưởng bỏ qua kiểm tra, có toàn quyền tối cao
+      if (isAdmin) {
+        return next();
+      }
+
+      // Kiểm tra trong bảng UserRole -> RolePermission
+      let hasRbacPermission = userRoles.some(ur => 
         ur.role.rolePermissions.some(rp => 
           rp.permission.name === permissionCode || 
-          rp.permission.name === `${resourceType}:*` ||
-          ur.role.name === 'admin'
+          rp.permission.name === `${resourceType}:*`
         )
       );
 
+      // Fallback từ CORE_ROLE_PERMISSION_MATRIX nếu userRoles chưa gán đủ
       if (!hasRbacPermission) {
-        // Ghi log cảnh báo truy cập trái phép
+        hasRbacPermission = roleNames.some(roleName => {
+          const matrix = CORE_ROLE_PERMISSION_MATRIX[roleName] || [];
+          return matrix.includes(permissionCode) || matrix.includes(`${resourceType}:*`);
+        });
+      }
+
+      if (!hasRbacPermission) {
         await AuditLogService.log({
           userId: user.id,
           action: permissionCode,
           module: resourceType,
           resource: resourceType,
-          reason: 'Từ chối tại Tầng 1 (RBAC): User không có vai trò chứa quyền này',
+          reason: `Từ chối tại Tầng 1 (RBAC): Vai trò [${roleNames.join(', ')}] không có quyền [${permissionCode}]`,
           req,
           severity: 'warning'
         });
 
-        // Trả về 403 mà không làm lộ thông tin tài nguyên có tồn tại hay không
-        return res.status(403).json({ success: false, message: 'Bạn không có quyền thực hiện hành động này' });
-      }
-
-      const roleNames = userRoles.map(ur => ur.role.name);
-      const isAdmin = roleNames.includes('admin') || (user.role && user.role.toLowerCase() === 'admin');
-
-      // Admin bỏ qua tầng Scope Check (BGH tối cao)
-      if (isAdmin) {
-        return next();
+        return res.status(403).json({ 
+          success: false, 
+          message: `Bạn không có quyền thực hiện hành động [${permissionCode}]` 
+        });
       }
 
       // ============================================================
@@ -78,16 +92,10 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
           classId: req.params.classId || req.params.id || req.body?.classId || req.query?.classId,
           subjectId: req.params.subjectId || req.body?.subjectId || req.query?.subjectId,
           studentId: req.params.studentId || req.body?.studentId || req.query?.studentId,
-          semester: req.body?.semester || req.query?.semester || 'HK1',
+          semester: req.body?.semester || req.query?.semester || 'HK1_2026',
           schoolYearId: req.body?.schoolYearId || req.query?.schoolYearId,
           reason: req.body?.reason
         };
-      }
-
-      // Lấy niên khóa hiện tại nếu không truyền lên
-      if (!context.schoolYearId) {
-        const currentYear = await prisma.schoolYear.findFirst({ where: { isCurrent: true } });
-        if (currentYear) context.schoolYearId = currentYear.id;
       }
 
       let isScopeAllowed = false;
@@ -98,7 +106,7 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
       // ------------------------------------------------------------
       if (resourceType === 'grade') {
         if (action === 'write') {
-          // 1. Kiểm tra Cửa Sổ Nhập Điểm (Grading Window)
+          // 1. Kiểm tra Cửa Sổ Nhập Điểm (Grading Window) nếu có thiết lập
           if (context.schoolYearId) {
             const gradingWindow = await prisma.gradingWindow.findFirst({
               where: {
@@ -108,36 +116,66 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
             });
 
             if (gradingWindow && gradingWindow.status === 'locked') {
-              denyReason = 'Cửa sổ nhập điểm của học kỳ này đã bị khóa. Vui lòng liên hệ Ban Giám Hiệu để xin mở khóa';
-              isScopeAllowed = false;
-            } else {
-              // 2. Giáo viên bộ môn: Chỉ được sửa điểm môn mình dạy đúng lớp trong phân công
-              const teacherAssignment = await prisma.teacherAssignment.findFirst({
-                where: {
-                  teacher: { userId: user.id },
-                  classId: context.classId,
-                  subjectId: context.subjectId,
-                  schoolYearId: context.schoolYearId
-                }
-              });
-
-              if (teacherAssignment) {
-                isScopeAllowed = true;
-              } else {
-                denyReason = 'Giáo viên không được phân công giảng dạy môn học này tại lớp được chọn';
-              }
+              denyReason = 'Cửa sổ nhập điểm của học kỳ này đã bị khóa. Vui lòng liên hệ Ban Giám Hiệu.';
             }
           }
+
+          if (!denyReason) {
+            // 2. Giáo viên bộ môn: Chỉ được sửa điểm môn mình dạy đúng lớp trong phân công
+            let targetSubjectId = context.subjectId;
+            if (targetSubjectId) {
+              const subj = await prisma.subject.findFirst({
+                where: {
+                  OR: [
+                    { id: targetSubjectId },
+                    { subjectCode: { equals: targetSubjectId, mode: 'insensitive' } }
+                  ]
+                }
+              });
+              if (subj) targetSubjectId = subj.id;
+            }
+
+            const teacherAssignment = await prisma.teacherAssignment.findFirst({
+              where: {
+                teacher: { userId: user.id },
+                classId: context.classId,
+                ...(targetSubjectId ? { subjectId: targetSubjectId } : {})
+              }
+            });
+
+            // Tổ trưởng bộ môn / BGH cũng có quyền ghi điểm
+            const isDeptHead = roleNames.includes('department_head') || user.teacher?.position?.includes('Trưởng bộ môn');
+
+            if (teacherAssignment || isDeptHead) {
+              isScopeAllowed = true;
+            } else {
+              denyReason = 'Bạn không được phân công giảng dạy môn học này tại lớp được chọn';
+            }
+          }
+        } else if (action === 'override') {
+          // Quyền đặc cách sửa điểm sau khi khóa: Phải có lý do và là BGH hoặc Trưởng bộ môn
+          const canOverride = roleNames.includes('department_head') || 
+                              roleNames.includes('vice_principal') || 
+                              roleNames.includes('principal') || 
+                              roleNames.includes('admin');
+          
+          if (!canOverride) {
+            denyReason = 'Chỉ Ban Giám Hiệu hoặc Trưởng Bộ Môn mới có quyền đặc cách mở/sửa điểm sau khi đã niêm phong';
+          } else if (!context.reason || context.reason.trim().length < 5) {
+            denyReason = 'Bắt buộc cung cấp lý do chính đáng (tối thiểu 5 ký tự) khi thực hiện đặc cách sửa điểm';
+          } else {
+            isScopeAllowed = true;
+          }
         } else if (action === 'read') {
-          // Học sinh: Xem điểm chính mình
+          // Học sinh: Chỉ xem điểm cá nhân
           if (roleNames.includes('student')) {
             const studentRecord = await prisma.student.findFirst({
               where: { userId: user.id, id: context.studentId }
             });
-            if (studentRecord) isScopeAllowed = true;
+            if (studentRecord || !context.studentId) isScopeAllowed = true;
           }
 
-          // Phụ huynh: Xem điểm con mình (qua guardian_links)
+          // Phụ huynh: Chỉ xem điểm của con
           if (roleNames.includes('parent')) {
             const guardianLink = await prisma.guardianLink.findFirst({
               where: {
@@ -151,57 +189,51 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
           }
 
           // GVCN: Xem toàn bộ điểm các môn của lớp chủ nhiệm
-          if (roleNames.includes('homeroom_teacher')) {
+          if (roleNames.includes('homeroom_teacher') || roleNames.includes('teacher')) {
             const homeroom = await prisma.homeroomAssignment.findFirst({
               where: {
                 teacher: { userId: user.id },
-                classId: context.classId,
-                schoolYearId: context.schoolYearId
+                classId: context.classId
               }
             });
             if (homeroom) isScopeAllowed = true;
           }
 
           // Giáo viên bộ môn: Xem điểm lớp mình dạy
-          if (roleNames.includes('subject_teacher')) {
+          if (roleNames.includes('subject_teacher') || roleNames.includes('teacher')) {
             const assignment = await prisma.teacherAssignment.findFirst({
               where: {
                 teacher: { userId: user.id },
-                classId: context.classId,
-                subjectId: context.subjectId
+                classId: context.classId
               }
             });
             if (assignment) isScopeAllowed = true;
           }
 
-          // Giám thị / Văn phòng: Xem toàn trường
-          if (roleNames.includes('supervisor') || roleNames.includes('office_staff')) {
+          if (roleNames.includes('supervisor') || roleNames.includes('office_staff') || roleNames.includes('department_head')) {
             isScopeAllowed = true;
           }
         }
       }
 
       // ------------------------------------------------------------
-      // B. SCOPE CHECK CHO HẠNH KIỂM (conduct)
+      // B. SCOPE CHECK CHO HẠNH KIỂM / RÈN LUYỆN (conduct)
       // ------------------------------------------------------------
       else if (resourceType === 'conduct') {
         if (action === 'write') {
-          // Chỉ GVCN của lớp đó hoặc Giám thị mới có quyền sửa điểm hạnh kiểm
-          if (roleNames.includes('homeroom_teacher')) {
-            const homeroom = await prisma.homeroomAssignment.findFirst({
-              where: {
-                teacher: { userId: user.id },
-                classId: context.classId,
-                schoolYearId: context.schoolYearId
-              }
-            });
-            if (homeroom) isScopeAllowed = true;
-          }
-
-          if (roleNames.includes('supervisor')) {
+          // Chỉ GVCN của lớp hoặc Giám thị mới được sửa hạnh kiểm
+          const homeroom = await prisma.homeroomAssignment.findFirst({
+            where: {
+              teacher: { userId: user.id },
+              classId: context.classId
+            }
+          });
+          if (homeroom || roleNames.includes('supervisor')) {
             isScopeAllowed = true;
+          } else {
+            denyReason = 'Chỉ Giáo viên chủ nhiệm của lớp hoặc Giám thị mới có quyền đánh giá kết quả rèn luyện';
           }
-        } else if (action === 'read') {
+        } else {
           isScopeAllowed = true;
         }
       }
@@ -211,7 +243,6 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
       // ------------------------------------------------------------
       else if (resourceType === 'attendance') {
         if (action === 'write') {
-          // GV dạy lớp, GVCN lớp, hoặc Giám thị
           const isTeacherOfClass = await prisma.teacherAssignment.findFirst({
             where: { teacher: { userId: user.id }, classId: context.classId }
           });
@@ -221,6 +252,8 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
 
           if (isTeacherOfClass || isHomeroomOfClass || roleNames.includes('supervisor')) {
             isScopeAllowed = true;
+          } else {
+            denyReason = 'Bạn không có quyền điểm danh lớp học này';
           }
         } else {
           isScopeAllowed = true;
@@ -235,14 +268,18 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
           if (roleNames.includes('student')) {
             const isOwn = await prisma.student.findFirst({ where: { userId: user.id, id: context.studentId } });
             if (isOwn) isScopeAllowed = true;
+            else denyReason = 'Học sinh chỉ được xem hồ sơ của chính mình';
           } else if (roleNames.includes('parent')) {
             const isChild = await prisma.guardianLink.findFirst({
               where: { parent: { userId: user.id }, studentId: context.studentId, custodyType: { not: 'none' } }
             });
             if (isChild) isScopeAllowed = true;
+            else denyReason = 'Phụ huynh chỉ được xem hồ sơ học sinh thuộc diện giám hộ hợp pháp';
           } else {
             isScopeAllowed = true;
           }
+        } else {
+          isScopeAllowed = true;
         }
       }
 
@@ -250,14 +287,14 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
       // E. SCOPE CHECK CHO XUẤT DỮ LIỆU HÀNG LOẠT (export:batch)
       // ------------------------------------------------------------
       else if (resourceType === 'export' && action === 'batch') {
-        if (roleNames.includes('admin') || roleNames.includes('office_staff')) {
+        if (roleNames.includes('admin') || roleNames.includes('office_staff') || roleNames.includes('principal')) {
           isScopeAllowed = true;
         } else {
-          denyReason = 'Quyền xuất dữ liệu hàng loạt toàn trường chỉ dành cho Quản trị viên và Bộ phận Văn phòng';
+          denyReason = 'Quyền xuất dữ liệu hàng loạt toàn trường chỉ dành cho Ban Giám Hiệu và Văn Phòng';
         }
       }
 
-      // Fallback cho các module khác nếu đã pass RBAC
+      // Fallback
       else {
         isScopeAllowed = true;
       }
@@ -272,15 +309,18 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
           module: resourceType,
           resource: resourceType,
           resourceId: context.classId || context.studentId,
-          reason: denyReason || 'Từ chối tại Tầng 2 (Scope Check): Không tìm thấy quan hệ dữ liệu hợp lệ trong niên khóa',
+          reason: denyReason || 'Từ chối tại Tầng 2 (Scope Guard): Không tìm thấy phân công dữ liệu hợp lệ',
           req,
           severity: 'warning'
         });
 
-        return res.status(403).json({ success: false, message: denyReason || 'Bạn không có quyền thao tác trên dữ liệu này' });
+        return res.status(403).json({ 
+          success: false, 
+          message: denyReason || 'Bạn không có quyền thao tác trên dữ liệu này' 
+        });
       }
 
-      // Nếu là thao tác Write / Delete / Override / Batch -> Tự động ghi Audit Log
+      // Ghi Audit Log cho các thao tác nhạy cảm
       if (['write', 'delete', 'override', 'batch'].includes(action)) {
         await AuditLogService.log({
           userId: user.id,
@@ -299,7 +339,7 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
       next();
     } catch (error) {
       console.error('[checkPermission Error]:', error);
-      return res.status(500).json({ success: false, message: 'Lỗi kiểm tra phân quyền hệ thống' });
+      return res.status(500).json({ success: false, message: 'Lỗi máy chủ khi kiểm tra phân quyền Scope Guard' });
     }
   };
 };

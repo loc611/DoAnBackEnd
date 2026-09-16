@@ -11,15 +11,17 @@ import { protect, authorize } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
-// Chỉ Admin mới được quản lý hệ thống tài khoản
 router.use(protect);
-router.use(authorize('admin'));
 
-router.get('/', getUsers);
-router.post('/', createUser);
-router.put('/:id', updateUser);
-router.patch('/:id/status', updateStatus);
-router.patch('/:id/reset-password', resetPassword);
-router.delete('/:id', deleteUser);
+// Quản Khoa (Teacher có chức vụ Quản Khoa/BGH) và Admin được xem và cập nhật trạng thái (Khóa/Đình chỉ)
+router.get('/', authorize('admin', 'teacher'), getUsers);
+router.patch('/:id/status', authorize('admin', 'teacher'), updateStatus);
+
+// Chỉ Admin mới được tạo mới, sửa toàn diện, reset mật khẩu, xóa tài khoản
+router.post('/', authorize('admin'), createUser);
+router.put('/:id', authorize('admin'), updateUser);
+router.patch('/:id/reset-password', authorize('admin'), resetPassword);
+router.delete('/:id', authorize('admin'), deleteUser);
 
 export default router;
+

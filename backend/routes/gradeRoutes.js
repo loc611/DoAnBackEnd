@@ -1,33 +1,37 @@
 import express from 'express';
 import { 
+    getSubjectGradesByClass, 
+    updateSubjectGradesByClass, 
+    unlockSubjectGrades,
+    getHomeroomSummary,
+    updateHomeroomEvaluation,
+    getMyGrades,
     getGradesByClass, 
     updateClassGrades, 
-    getMyGrades,
-    createUnlockRequest,
-    getUnlockRequests,
-    approveUnlockRequest,
-    rejectUnlockRequest
+    unlockClassGrades 
 } from '../controllers/gradeController.js';
-import { protect, authorize } from '../middlewares/authMiddleware.js';
+import { protect } from '../middlewares/authMiddleware.js';
+import { checkPermission } from '../middlewares/rbacScopeGuard.js';
 
 const router = express.Router();
 
 router.use(protect);
 
+// 1. Tra cứu điểm cá nhân của Học sinh & Phụ huynh (Đã qua kiểm tra custody chống IDOR)
 router.get('/my-grades', getMyGrades);
 
-// Quản lý đề xuất mở khóa sổ điểm (GradeUnlockRequest)
-router.route('/unlock-requests')
-    .get(getUnlockRequests)
-    .post(authorize('teacher', 'admin'), createUnlockRequest);
+// 2. Nghiệp vụ Giáo viên Bộ môn (Theo chuẩn Thông tư 22/2021/TT-BGDĐT)
+router.get('/subject/:classId', checkPermission('read', 'grade'), getSubjectGradesByClass);
+router.put('/subject/:classId', checkPermission('write', 'grade'), updateSubjectGradesByClass);
+router.put('/subject/:classId/unlock', checkPermission('override', 'grade'), unlockSubjectGrades);
 
-router.put('/unlock-requests/:id/approve', authorize('admin'), approveUnlockRequest);
-router.put('/unlock-requests/:id/reject', authorize('admin'), rejectUnlockRequest);
+// 3. Nghiệp vụ Giáo viên Chủ nhiệm (Sổ tổng hợp điểm & Đánh giá rèn luyện)
+router.get('/homeroom/:classId', checkPermission('read', 'grade'), getHomeroomSummary);
+router.put('/homeroom/:classId', checkPermission('write', 'conduct'), updateHomeroomEvaluation);
 
-router.route('/class/:classId')
-    .get(getGradesByClass)
-    .put(authorize('admin', 'teacher'), updateClassGrades);
+// 4. Tuyến đường tương thích ngược (Backward Compatibility)
+router.get('/class/:classId', checkPermission('read', 'grade'), getGradesByClass);
+router.put('/class/:classId', checkPermission('write', 'grade'), updateClassGrades);
+router.put('/class/:classId/unlock', checkPermission('override', 'grade'), unlockClassGrades);
 
 export default router;
-
-

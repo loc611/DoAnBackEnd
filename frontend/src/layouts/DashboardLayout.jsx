@@ -31,7 +31,9 @@ import {
   HelpCircle,
   CheckCircle2,
   Clock,
-  Layers
+  Layers,
+  FileText,
+  FileQuestion
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useTeacherContext } from '../context/TeacherContext';
@@ -214,6 +216,8 @@ const DashboardLayout = () => {
           { icon: School, label: 'Sổ Lớp Chủ Nhiệm', path: '/teacher/homeroom' },
           { icon: UserCheck, label: 'Điểm Danh Học Sinh', path: '/attendance' },
           { icon: BookOpenCheck, label: 'Học Bạ & Tổng Điểm', path: '/grades' },
+          { icon: FileText, label: 'Sổ Đầu Bài Điện Tử', path: '/lesson-logs' },
+          { icon: FileQuestion, label: 'Xử Lý Đơn & Phúc Khảo', path: '/petitions' },
           { icon: Users, label: 'Danh Sách Học Sinh', path: '/students' },
         ]
       });
@@ -223,10 +227,21 @@ const DashboardLayout = () => {
         title: 'GIẢNG DẠY BỘ MÔN',
         items: [
           { icon: BookOpenCheck, label: 'Sổ Nhập Điểm Bộ Môn', path: '/grades' },
+          { icon: FileText, label: 'Sổ Đầu Bài Điện Tử', path: '/lesson-logs' },
+          { icon: FileQuestion, label: 'Xử Lý Đơn & Phúc Khảo', path: '/petitions' },
           { icon: Calendar, label: 'Lịch Giảng Dạy (TKB)', path: '/schedule' },
           { icon: CalendarDays, label: 'Lịch Thi & Coi Thi', path: '/exams' },
           { icon: Users, label: 'Tra Cứu Học Sinh', path: '/students' },
           ...(isHomeroomTeacher ? [{ icon: School, label: `Lớp Chủ Nhiệm (${homeroomClass?.className || ''})`, path: '/teacher/homeroom' }] : [])
+        ]
+      });
+    }
+
+    if (userData?.position === 'Trưởng khoa / Quản khoa' || userData?.position === 'Ban giám hiệu') {
+      sections.push({
+        title: 'QUẢN TRỊ KHOA / ĐƠN VỊ',
+        items: [
+          { icon: Shield, label: 'Quản Trị Tài Khoản (Khóa/Đình chỉ)', path: '/users', badge: 'Quản Khoa' },
         ]
       });
     }
@@ -262,6 +277,8 @@ const DashboardLayout = () => {
           { icon: CalendarDays, label: 'Lịch thi học kỳ', path: '/exams' },
           { icon: UserCheck, label: 'Điểm danh chuyên cần', path: '/attendance' },
           { icon: BookOpenCheck, label: 'Sổ điểm học sinh', path: '/grades' },
+          { icon: FileText, label: 'Sổ đầu bài điện tử', path: '/lesson-logs' },
+          { icon: FileQuestion, label: 'Cổng đơn từ & phúc khảo', path: '/petitions' },
         ]
       },
       {
@@ -290,6 +307,7 @@ const DashboardLayout = () => {
           { icon: CalendarDays, label: 'Lịch Thi Phòng Thi', path: '/student/exams' },
           { icon: UserCheck, label: 'Chuyên Cần Điểm Danh', path: '/student/attendance' },
           { icon: Layers, label: 'Đăng Ký Tổ Hợp Khối 10', path: '/student/subject-combination' },
+          { icon: FileQuestion, label: 'Đơn Từ & Phúc Khảo', path: '/petitions' },
         ]
       },
       {

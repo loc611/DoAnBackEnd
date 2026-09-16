@@ -1,26 +1,340 @@
 import prisma from '../prismaClient.js';
 import AuditLogService from '../services/auditLogService.js';
-import GradePolicy from '../policies/GradePolicy.js';
+import { 
+    calculateSubjectSemesterAverage, 
+    calculateSubjectYearlyAverage, 
+    evaluateSemesterSummary,
+    roundScore 
+} from '../utils/gradeCalculator.js';
 
-export const getGradesByClass = async (req, res) => {
+/**
+ * =========================================================================
+ * 🌟 1. NGHIỆP VỤ GIÁO VIÊN BỘ MÔN (THÔNG TƯ 22/2021/TT-BGDĐT)
+ * =========================================================================
+ */
+
+/**
+ * Lấy bảng điểm chi tiết môn học của một lớp theo học kỳ
+ * @route GET /api/grades/subject/:classId?subjectId=...&semester=...
+ */
+export const getSubjectGradesByClass = async (req, res) => {
+    try {
+        const { classId } = req.params;
+        let { subjectId, semester = 'HK1_2026' } = req.query;
+
+        if (!classId) {
+            return res.status(400).json({ success: false, message: 'Thiếu mã lớp học (classId)' });
+        }
+
+        // Tìm môn học theo ID hoặc subjectCode
+        let subject = null;
+        if (subjectId) {
+            subject = await prisma.subject.findFirst({
+                where: {
+                    OR: [
+                        { id: subjectId },
+                        { subjectCode: { equals: subjectId, mode: 'insensitive' } }
+                    ]
+                }
+            });
+        }
+
+        // Nếu không truyền môn học, lấy môn đầu tiên được phân công cho lớp này
+        if (!subject) {
+            const firstAssignment = await prisma.teacherAssignment.findFirst({
+                where: { classId },
+                include: { subject: true }
+            });
+            if (firstAssignment) subject = firstAssignment.subject;
+            else subject = await prisma.subject.findFirst();
+        }
+
+        if (!subject) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy thông tin môn học' });
+        }
+
+        const resolvedSubjectId = subject.id;
+
+        // Lấy danh sách học sinh của lớp kèm điểm môn học tương ứng
+        const students = await prisma.student.findMany({
+            where: { classId },
+            include: {
+                subjectGrades: {
+                    where: {
+                        subjectId: resolvedSubjectId,
+                        semester
+                    }
+                }
+            },
+            orderBy: { studentCode: 'asc' }
+        });
+
+        // Xác định trạng thái sổ điểm của môn học này
+        let gradebookStatus = 'draft';
+        if (students.length > 0) {
+            const hasGrades = students.some(s => s.subjectGrades.length > 0);
+            if (hasGrades) {
+                const allLocked = students.every(s => s.subjectGrades.length > 0 && s.subjectGrades[0].status === 'locked');
+                const allSubmitted = students.every(s => s.subjectGrades.length > 0 && (s.subjectGrades[0].status === 'submitted' || s.subjectGrades[0].status === 'locked'));
+                if (allLocked) gradebookStatus = 'locked';
+                else if (allSubmitted) gradebookStatus = 'submitted';
+            }
+        }
+
+        // Chuẩn hóa dữ liệu trả về theo chuẩn Thông tư 22
+        const formattedStudents = students.map(student => {
+            const sg = student.subjectGrades.length > 0 ? student.subjectGrades[0] : null;
+            return {
+                id: student.studentCode,
+                studentId: student.id,
+                studentCode: student.studentCode,
+                fullName: student.fullName,
+                assessmentType: subject.type === 'Tự chọn' && (subject.name.includes('Thể chất') || subject.name.includes('Trải nghiệm')) ? 'feedback' : (sg?.assessmentType || 'score'),
+                tx1: sg?.tx1 ?? null,
+                tx2: sg?.tx2 ?? null,
+                tx3: sg?.tx3 ?? null,
+                tx4: sg?.tx4 ?? null,
+                gk: sg?.gk ?? null,
+                ck: sg?.ck ?? null,
+                avgScore: sg?.avgScore ?? null,
+                feedbackResult: sg?.feedbackResult ?? null,
+                teacherRemark: sg?.teacherRemark ?? '',
+                status: sg?.status || 'draft'
+            };
+        });
+
+        return res.json({
+            success: true,
+            classId,
+            subject: {
+                id: subject.id,
+                subjectCode: subject.subjectCode,
+                name: subject.name,
+                type: subject.type
+            },
+            semester,
+            gradebookStatus,
+            students: formattedStudents
+        });
+    } catch (error) {
+        console.error('getSubjectGradesByClass error:', error);
+        return res.status(500).json({ success: false, message: 'Lỗi máy chủ khi lấy bảng điểm môn học' });
+    }
+};
+
+/**
+ * Cập nhật bảng điểm môn học của một lớp (Lưu nháp / Nộp / Khóa)
+ * @route PUT /api/grades/subject/:classId
+ */
+export const updateSubjectGradesByClass = async (req, res) => {
+    try {
+        const { classId } = req.params;
+        const { subjectId, semester = 'HK1_2026', grades, status = 'draft', reason } = req.body;
+
+        if (!classId || !subjectId) {
+            return res.status(400).json({ success: false, message: 'Vui lòng cung cấp classId và subjectId' });
+        }
+
+        if (!grades || !Array.isArray(grades) || grades.length === 0) {
+            return res.status(400).json({ success: false, message: 'Dữ liệu bảng điểm không được để trống' });
+        }
+
+        // Tìm môn học
+        const subject = await prisma.subject.findFirst({
+            where: {
+                OR: [
+                    { id: subjectId },
+                    { subjectCode: { equals: subjectId, mode: 'insensitive' } }
+                ]
+            }
+        });
+
+        if (!subject) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy môn học' });
+        }
+
+        const resolvedSubjectId = subject.id;
+        const resolvedStatus = ['locked', 'submitted', 'draft'].includes(status) ? status : 'draft';
+
+        // Lấy thông tin giáo viên nhập điểm nếu có
+        const teacherProfile = req.user?.teacher;
+
+        // Xử lý Transaction cập nhật điểm hàng loạt với tính toán TT22
+        await prisma.$transaction(async (tx) => {
+            for (const item of grades) {
+                if (!item.studentId) continue;
+
+                // 1. Tính toán ĐTBmhk theo Thông tư 22
+                const regularList = [item.tx1, item.tx2, item.tx3, item.tx4].filter(s => s !== null && s !== undefined && s !== '');
+                const calcResult = calculateSubjectSemesterAverage({
+                    regularScores: regularList,
+                    midtermScore: item.gk !== '' ? item.gk : null,
+                    finalScore: item.ck !== '' ? item.ck : null,
+                    assessmentType: item.assessmentType || 'score',
+                    feedbackResult: item.feedbackResult
+                });
+
+                const upsertData = {
+                    assessmentType: item.assessmentType || 'score',
+                    tx1: item.tx1 !== '' && item.tx1 !== undefined ? Number(item.tx1) : null,
+                    tx2: item.tx2 !== '' && item.tx2 !== undefined ? Number(item.tx2) : null,
+                    tx3: item.tx3 !== '' && item.tx3 !== undefined ? Number(item.tx3) : null,
+                    tx4: item.tx4 !== '' && item.tx4 !== undefined ? Number(item.tx4) : null,
+                    gk: item.gk !== '' && item.gk !== undefined ? Number(item.gk) : null,
+                    ck: item.ck !== '' && item.ck !== undefined ? Number(item.ck) : null,
+                    avgScore: calcResult.avgScore,
+                    feedbackResult: calcResult.feedbackResult,
+                    teacherRemark: item.teacherRemark ? String(item.teacherRemark).trim() : null,
+                    status: resolvedStatus,
+                    teacherId: teacherProfile ? teacherProfile.id : null,
+                    ...(resolvedStatus === 'locked' ? { lockedAt: new Date(), lockedById: req.user.id } : {})
+                };
+
+                await tx.subjectGrade.upsert({
+                    where: {
+                        studentId_subjectId_classId_semester: {
+                            studentId: item.studentId,
+                            subjectId: resolvedSubjectId,
+                            classId,
+                            semester
+                        }
+                    },
+                    update: upsertData,
+                    create: {
+                        studentId: item.studentId,
+                        subjectId: resolvedSubjectId,
+                        classId,
+                        semester,
+                        ...upsertData
+                    }
+                });
+            }
+        });
+
+        // Ghi vết Audit Log
+        await AuditLogService.log({
+            userId: req.user.id,
+            action: resolvedStatus === 'locked' ? 'grade:lock_publish' : 'grade:write',
+            module: 'grade',
+            resource: subject.name,
+            resourceId: `${classId}_${resolvedSubjectId}`,
+            reason: reason || `Cập nhật bảng điểm môn ${subject.name} (Trạng thái: ${resolvedStatus})`,
+            req,
+            severity: resolvedStatus === 'locked' ? 'critical' : 'info'
+        });
+
+        return res.json({
+            success: true,
+            message: resolvedStatus === 'locked' 
+                ? 'Đã niêm phong và công bố bảng điểm thành công' 
+                : (resolvedStatus === 'submitted' ? 'Đã nộp bảng điểm cho Trưởng bộ môn' : 'Đã lưu nháp bảng điểm thành công'),
+            status: resolvedStatus
+        });
+    } catch (error) {
+        console.error('updateSubjectGradesByClass error:', error);
+        return res.status(500).json({ success: false, message: 'Lỗi khi lưu bảng điểm môn học: ' + error.message });
+    }
+};
+
+/**
+ * Mở khóa sổ điểm môn học (Ban Giám Hiệu / Trưởng Bộ Môn)
+ * @route PUT /api/grades/subject/:classId/unlock
+ */
+export const unlockSubjectGrades = async (req, res) => {
+    try {
+        const { classId } = req.params;
+        const { subjectId, semester = 'HK1_2026', reason } = req.body;
+
+        if (!reason || String(reason).trim().length < 5) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Bắt buộc nhập lý do mở khóa sổ điểm (tối thiểu 5 ký tự) để phục vụ kiểm toán' 
+            });
+        }
+
+        let subjectWhere = {};
+        if (subjectId) {
+            subjectWhere = {
+                OR: [{ id: subjectId }, { subjectCode: subjectId }]
+            };
+        }
+
+        const subject = await prisma.subject.findFirst({ where: subjectWhere });
+        if (!subject) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy môn học' });
+        }
+
+        await prisma.subjectGrade.updateMany({
+            where: {
+                classId,
+                subjectId: subject.id,
+                semester
+            },
+            data: {
+                status: 'draft',
+                lockedAt: null,
+                lockedById: null
+            }
+        });
+
+        await AuditLogService.log({
+            userId: req.user.id,
+            action: 'grade:unlock',
+            module: 'grade',
+            resource: subject.name,
+            resourceId: `${classId}_${subject.id}`,
+            reason: String(reason).trim(),
+            req,
+            severity: 'critical'
+        });
+
+        return res.json({ success: true, message: 'Đã mở khóa sổ điểm thành công cho giáo viên chỉnh sửa' });
+    } catch (error) {
+        console.error('unlockSubjectGrades error:', error);
+        return res.status(500).json({ success: false, message: 'Lỗi server khi mở khóa sổ điểm' });
+    }
+};
+
+/**
+ * =========================================================================
+ * 🌟 2. NGHIỆP VỤ GIÁO VIÊN CHỦ NHIỆM (SỔ TỔNG HỢP & ĐÁNH GIÁ THÔNG TƯ 22)
+ * =========================================================================
+ */
+
+/**
+ * Lấy sổ điểm tổng hợp tất cả các môn của lớp học (Dành cho GVCN và BGH)
+ * @route GET /api/grades/homeroom/:classId?semester=...
+ */
+export const getHomeroomSummary = async (req, res) => {
     try {
         const { classId } = req.params;
         const semester = req.query.semester || 'HK1_2026';
 
-        // Kiểm tra quyền xem điểm lớp học (grade.view)
-        if (req.user && req.user.can) {
-            const check = await req.user.can('grade.view', { classId });
-            if (!check.allowed) {
-                return res.status(403).json({ success: false, message: check.reason || 'Bạn không có quyền xem bảng điểm của lớp này' });
+        // Lấy thông tin lớp và giáo viên chủ nhiệm
+        const classInfo = await prisma.class.findUnique({
+            where: { id: classId },
+            include: {
+                homeroomTeacher: true
             }
+        });
+
+        if (!classInfo) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy lớp học' });
         }
 
+        // Lấy tất cả môn học của trường
+        const allSubjects = await prisma.subject.findMany({
+            orderBy: { subjectCode: 'asc' }
+        });
+
+        // Lấy danh sách học sinh kèm toàn bộ điểm môn và điểm tổng hợp học kỳ
         const students = await prisma.student.findMany({
             where: { classId },
-            select: {
-                id: true,
-                studentCode: true,
-                fullName: true,
+            include: {
+                subjectGrades: {
+                    where: { semester },
+                    include: { subject: true }
+                },
                 grades: {
                     where: { semester }
                 }
@@ -28,229 +342,194 @@ export const getGradesByClass = async (req, res) => {
             orderBy: { studentCode: 'asc' }
         });
 
-        // Kiểm tra trạng thái bảng điểm tổng thể của lớp
-        let overallStatus = 'draft';
-        if (students.length > 0) {
-            const allGrades = students.flatMap(s => s.grades);
-            if (allGrades.length > 0) {
-                if (allGrades.some(g => g.status === 'locked')) {
-                    overallStatus = 'locked';
-                } else if (allGrades.some(g => g.status === 'submitted')) {
-                    overallStatus = 'submitted';
-                }
-            }
-        }
+        const summaryList = students.map(student => {
+            // Map điểm từng môn
+            const subjectMap = {};
+            student.subjectGrades.forEach(sg => {
+                const subCode = sg.subject?.subjectCode || sg.subjectId;
+                subjectMap[subCode] = {
+                    subjectName: sg.subject?.name,
+                    avgScore: sg.avgScore,
+                    feedbackResult: sg.feedbackResult,
+                    assessmentType: sg.assessmentType,
+                    status: sg.status
+                };
+            });
 
-        // Kiểm tra Cửa sổ mở khóa tạm thời (TTL) còn hiệu lực
-        const now = new Date();
-        const activeUnlock = await prisma.gradeUnlockRequest.findFirst({
-            where: {
-                classId,
-                semester,
-                status: 'approved',
-                expiresAt: { gt: now }
-            },
-            include: {
-                teacher: { select: { fullName: true, teacherCode: true } },
-                approvedBy: { select: { username: true } }
-            },
-            orderBy: { expiresAt: 'desc' }
-        });
+            // Lấy kết quả rèn luyện do GVCN lưu
+            const summaryRecord = student.grades.length > 0 ? student.grades[0] : null;
+            const conduct = summaryRecord?.conductScore || 'Tốt';
 
-        const result = students.map(student => {
-            const studentGrade = student.grades.length > 0 ? student.grades[0] : null;
+            // Tính toán tổng kết theo Thông tư 22
+            const evaluation = evaluateSemesterSummary(student.subjectGrades, conduct);
+
             return {
-                id: student.studentCode,
                 studentId: student.id,
-                name: student.fullName,
-                status: studentGrade?.status || 'draft',
-                scores: studentGrade ? {
-                    math: studentGrade.math,
-                    literature: studentGrade.literature,
-                    english: studentGrade.english,
-                    physics: studentGrade.physics,
-                    chemistry: studentGrade.chemistry,
-                    it: studentGrade.it
-                } : {
-                    math: 0, literature: 0, english: 0, physics: 0, chemistry: 0, it: 0
-                }
+                studentCode: student.studentCode,
+                fullName: student.fullName,
+                subjects: subjectMap,
+                overallAvgScore: summaryRecord?.overallAvgScore ?? evaluation.overallAvg,
+                conductScore: conduct,
+                academicRank: summaryRecord?.academicRank ?? evaluation.academicRank,
+                titleAwarded: summaryRecord?.titleAwarded ?? evaluation.titleAwarded,
+                teacherRemark: summaryRecord?.teacherRemark || '',
+                status: summaryRecord?.status || 'draft'
             };
         });
 
-        res.json({
-            status: overallStatus,
-            isLocked: overallStatus === 'locked',
-            activeUnlock: activeUnlock ? {
-                id: activeUnlock.id,
-                expiresAt: activeUnlock.expiresAt,
-                remainingMinutes: Math.max(0, Math.ceil((new Date(activeUnlock.expiresAt) - now) / 60000)),
-                durationMinutes: activeUnlock.durationMinutes,
-                reason: activeUnlock.reason,
-                teacherName: activeUnlock.teacher?.fullName
-            } : null,
-            students: result
+        return res.json({
+            success: true,
+            classInfo: {
+                id: classInfo.id,
+                className: classInfo.className,
+                homeroomTeacherName: classInfo.homeroomTeacher?.fullName || 'Chưa phân công'
+            },
+            subjects: allSubjects.map(s => ({ id: s.id, code: s.subjectCode, name: s.name, type: s.type })),
+            semester,
+            students: summaryList
         });
     } catch (error) {
-        console.error('getGradesByClass error:', error);
-        res.status(500).json({ message: 'Lỗi server khi lấy bảng điểm' });
+        console.error('getHomeroomSummary error:', error);
+        return res.status(500).json({ success: false, message: 'Lỗi server khi lấy sổ điểm tổng hợp lớp' });
     }
 };
 
-export const updateClassGrades = async (req, res) => {
+/**
+ * GVCN cập nhật kết quả rèn luyện (hạnh kiểm) & chốt sổ học kỳ theo Thông tư 22
+ * @route PUT /api/grades/homeroom/:classId
+ */
+export const updateHomeroomEvaluation = async (req, res) => {
     try {
         const { classId } = req.params;
-        const { semester = 'HK1_2026', grades, status = 'draft', reason } = req.body;
+        const { semester = 'HK1_2026', evaluations, status = 'draft' } = req.body;
 
-        if (!grades || !Array.isArray(grades)) {
-            return res.status(400).json({ message: 'Dữ liệu bảng điểm không hợp lệ' });
-        }
-
-        const role = (req.user?.role || '').toLowerCase();
-        const isAdminOrPrincipal = ['admin', 'principal', 'vice_principal'].includes(role);
-
-        // Kiểm tra xem sổ điểm hiện tại của lớp đã bị khóa chưa
-        const existingGrades = await prisma.grade.findMany({
-            where: { classId, semester },
-            take: 5
-        });
-        const isCurrentlyLocked = existingGrades.some(g => g.status === 'locked');
-
-        // Kiểm tra cửa sổ mở khóa tạm thời (TTL)
-        const now = new Date();
-        const activeUnlock = await prisma.gradeUnlockRequest.findFirst({
-            where: {
-                classId,
-                semester,
-                status: 'approved',
-                expiresAt: { gt: now }
-            }
-        });
-        const hasActiveUnlock = Boolean(activeUnlock);
-
-        // Quy định thẩm quyền:
-        // 1. Nếu muốn Khóa & Công bố (status === 'locked'): Bắt buộc phải là Admin / BGH
-        if (status === 'locked' && !isAdminOrPrincipal) {
-            return res.status(403).json({
-                success: false,
-                message: 'Theo Thông tư 22/2021/TT-BGDĐT, chỉ Ban Giám Hiệu mới có thẩm quyền Khóa sổ điểm và công bố toàn trường.'
-            });
-        }
-
-        // 2. Nếu sổ điểm đang bị KHÓA và không phải BGH đặc cách, thì giáo viên phải có activeUnlock
-        if (isCurrentlyLocked && !isAdminOrPrincipal && !hasActiveUnlock) {
-            return res.status(403).json({
-                success: false,
-                message: 'Sổ điểm đã bị khóa và niêm phong. Vui lòng gửi Yêu cầu mở khóa tới Ban Giám Hiệu kèm minh chứng.'
-            });
-        }
-
-        // 3. Chuẩn hóa trạng thái mục tiêu
-        let gradeStatus = 'draft';
-        if (status === 'locked') gradeStatus = 'locked';
-        else if (status === 'submitted') gradeStatus = 'submitted';
-
-        // 4. Phân quyền ABAC bổ sung qua GradePolicy
-        if (req.user && req.user.can) {
-            const requiredPerm = gradeStatus === 'locked' ? 'grade.lock_publish' : 'grade.input_draft';
-            const check = await req.user.can(requiredPerm, {
-                classId,
-                reason,
-                isClassLocked: isCurrentlyLocked,
-                hasActiveUnlock
-            });
-            if (!check.allowed) {
-                return res.status(403).json({ success: false, message: check.reason });
-            }
+        if (!evaluations || !Array.isArray(evaluations)) {
+            return res.status(400).json({ success: false, message: 'Dữ liệu đánh giá không hợp lệ' });
         }
 
         await prisma.$transaction(async (tx) => {
-            for (const item of grades) {
-                const uniqueInput = {
-                    studentId_classId_semester: {
-                        studentId: item.studentId,
-                        classId: classId,
-                        semester: semester
-                    }
-                };
+            for (const item of evaluations) {
+                if (!item.studentId) continue;
 
-                const updateData = {
-                    status: gradeStatus,
-                    math: Number(item.scores?.math) || 0,
-                    literature: Number(item.scores?.literature) || 0,
-                    english: Number(item.scores?.english) || 0,
-                    physics: Number(item.scores?.physics) || 0,
-                    chemistry: Number(item.scores?.chemistry) || 0,
-                    it: Number(item.scores?.it) || 0
-                };
+                // Lấy các môn đã có điểm của học sinh
+                const subjectGrades = await tx.subjectGrade.findMany({
+                    where: { studentId: item.studentId, semester }
+                });
 
-                if (gradeStatus === 'locked') {
-                    updateData.lockedAt = now;
-                    updateData.lockedById = req.user?.id;
-                }
+                const conduct = item.conductScore || 'Tốt';
+                const evaluated = evaluateSemesterSummary(subjectGrades, conduct);
 
                 await tx.grade.upsert({
-                    where: uniqueInput,
-                    update: updateData,
+                    where: {
+                        studentId_classId_semester: {
+                            studentId: item.studentId,
+                            classId,
+                            semester
+                        }
+                    },
+                    update: {
+                        conductScore: conduct,
+                        overallAvgScore: evaluated.overallAvg,
+                        academicRank: evaluated.academicRank,
+                        titleAwarded: evaluated.titleAwarded,
+                        teacherRemark: item.teacherRemark ? String(item.teacherRemark).trim() : null,
+                        status
+                    },
                     create: {
                         studentId: item.studentId,
-                        classId: classId,
-                        semester: semester,
-                        ...updateData
+                        classId,
+                        semester,
+                        conductScore: conduct,
+                        overallAvgScore: evaluated.overallAvg,
+                        academicRank: evaluated.academicRank,
+                        titleAwarded: evaluated.titleAwarded,
+                        teacherRemark: item.teacherRemark ? String(item.teacherRemark).trim() : null,
+                        status
                     }
                 });
             }
         });
 
-        // Ghi vết kiểm toán (Audit Logging)
-        let logAction = 'GRADE_INPUT_DRAFT';
-        if (gradeStatus === 'locked') logAction = 'GRADE_LOCK_PUBLISH';
-        else if (gradeStatus === 'submitted') logAction = 'GRADE_SUBMIT';
-        else if (hasActiveUnlock) logAction = 'GRADE_EDIT_DURING_UNLOCK_WINDOW';
-
         await AuditLogService.log({
-            userId: req.user?.id,
-            action: logAction,
-            module: 'grade',
-            resource: 'Grade',
+            userId: req.user.id,
+            action: 'conduct:write',
+            module: 'conduct',
+            resource: 'homeroom_summary',
             resourceId: classId,
-            newData: { 
-                classId, 
-                semester, 
-                status: gradeStatus, 
-                totalStudents: grades.length,
-                activeUnlockId: activeUnlock?.id || null 
-            },
-            reason: reason || (
-                gradeStatus === 'locked' 
-                    ? 'BGH Khóa sổ & Công bố điểm chính thức' 
-                    : gradeStatus === 'submitted'
-                        ? 'GV Nộp bảng điểm cho BGH xét duyệt'
-                        : hasActiveUnlock
-                            ? 'Điều chỉnh điểm trong Cửa sổ mở khóa tạm thời'
-                            : 'Lưu nháp điểm môn học'
-            ),
+            reason: `GVCN cập nhật đánh giá rèn luyện và xếp loại học kỳ ${semester}`,
             req,
-            severity: (gradeStatus === 'locked' || hasActiveUnlock) ? 'critical' : 'info'
+            severity: 'info'
         });
 
-        res.json({ 
-            message: gradeStatus === 'locked' 
-                ? 'Đã khóa sổ điểm và công bố chính thức cho học sinh' 
-                : gradeStatus === 'submitted'
-                    ? 'Đã nộp bảng điểm thành công, chờ Ban Giám Hiệu phê duyệt'
-                    : 'Đã lưu bản nháp thành công',
-            status: gradeStatus
-        });
+        return res.json({ success: true, message: 'Đã lưu đánh giá rèn luyện và xếp loại học lực thành công' });
     } catch (error) {
-        console.error('updateClassGrades error:', error);
-        res.status(500).json({ message: 'Lỗi server khi cập nhật điểm' });
+        console.error('updateHomeroomEvaluation error:', error);
+        return res.status(500).json({ success: false, message: 'Lỗi khi lưu đánh giá GVCN: ' + error.message });
     }
 };
 
+/**
+ * =========================================================================
+ * 🌟 3. TRA CỨU ĐIỂM HỌC SINH & PHỤ HUYNH (PHIẾU ĐIỂM CÁ NHÂN AN TOÀN)
+ * =========================================================================
+ */
+
+/**
+ * Học sinh tra cứu điểm cá nhân / Phụ huynh tra cứu điểm con em
+ * @route GET /api/grades/my-grades
+ */
 export const getMyGrades = async (req, res) => {
     try {
+        const semester = req.query.semester || 'HK1_2026';
+        let studentId = null;
+
+        // Trường hợp Học sinh
+        if (req.user.role === 'student') {
+            const student = await prisma.student.findFirst({
+                where: { userId: req.user.id }
+            });
+            if (!student) {
+                return res.status(404).json({ success: false, message: 'Không tìm thấy hồ sơ học sinh' });
+            }
+            studentId = student.id;
+        }
+        // Trường hợp Phụ huynh (Kiểm tra quan hệ giám hộ để chống IDOR)
+        else if (req.user.role === 'parent') {
+            const requestedStudentId = req.query.studentId;
+            const parent = await prisma.parent.findFirst({
+                where: { userId: req.user.id },
+                include: { guardianLinks: true }
+            });
+
+            if (!parent) {
+                return res.status(404).json({ success: false, message: 'Không tìm thấy hồ sơ phụ huynh' });
+            }
+
+            const validLink = parent.guardianLinks.find(link => 
+                link.studentId === requestedStudentId && 
+                link.accessGrades === true && 
+                link.custodyType !== 'none'
+            );
+
+            if (!validLink) {
+                return res.status(403).json({ 
+                    success: false, 
+                    message: 'Bạn không có quyền xem kết quả học tập của học sinh này' 
+                });
+            }
+            studentId = requestedStudentId;
+        } else {
+            // Cho phép Admin/Teacher tra cứu theo studentId
+            studentId = req.query.studentId;
+        }
+
+        if (!studentId) {
+            return res.status(400).json({ success: false, message: 'Vui lòng cung cấp studentId' });
+        }
+
+        // Lấy thông tin học sinh
         const student = await prisma.student.findUnique({
-            where: { userId: req.user.id },
+            where: { id: studentId },
             include: {
                 class: {
                     include: {
@@ -261,271 +540,95 @@ export const getMyGrades = async (req, res) => {
         });
 
         if (!student) {
-            return res.status(404).json({ message: 'Không tìm thấy hồ sơ học sinh' });
+            return res.status(404).json({ success: false, message: 'Không tìm thấy học sinh' });
         }
 
-        const grades = await prisma.grade.findMany({
-            where: { studentId: student.id },
-            include: {
-                class: true
-            },
-            orderBy: { semester: 'asc' }
-        });
-
-        res.json({ student, grades });
-    } catch (error) {
-        console.error('Error in getMyGrades:', error);
-        res.status(500).json({ message: 'Lỗi server khi lấy bảng điểm cá nhân' });
-    }
-};
-
-/**
- * GVBM tạo yêu cầu mở khóa sổ điểm
- */
-export const createUnlockRequest = async (req, res) => {
-    try {
-        const { classId, semester = 'HK1_2026', reason, durationMinutes = 120 } = req.body;
-
-        if (!reason || reason.trim().length < 5) {
-            return res.status(400).json({ message: 'Vui lòng cung cấp lý do giải trình chi tiết (tối thiểu 5 ký tự)' });
-        }
-
-        const teacher = await prisma.teacher.findFirst({
-            where: { userId: req.user.id }
-        });
-
-        if (!teacher && !['admin', 'principal', 'vice_principal'].includes(req.user.role)) {
-            return res.status(403).json({ message: 'Chỉ giáo viên phụ trách mới có quyền gửi yêu cầu mở khóa' });
-        }
-
-        const teacherId = teacher ? teacher.id : (await prisma.teacher.findFirst())?.id;
-        if (!teacherId) {
-            return res.status(400).json({ message: 'Không tìm thấy thông tin giáo viên gửi yêu cầu' });
-        }
-
-        const unlockReq = await prisma.gradeUnlockRequest.create({
-            data: {
-                classId,
-                semester,
-                teacherId,
-                reason: reason.trim(),
-                durationMinutes: Number(durationMinutes) || 120,
-                status: 'pending'
+        // Lấy chi tiết điểm các môn theo Thông tư 22
+        const subjectGrades = await prisma.subjectGrade.findMany({
+            where: {
+                studentId,
+                semester
             },
             include: {
-                class: true,
+                subject: true,
                 teacher: true
-            }
-        });
-
-        // Tạo thông báo cho Ban Giám Hiệu
-        await prisma.notification.create({
-            data: {
-                title: `Đề xuất mở khóa sổ điểm: Lớp ${unlockReq.class?.className}`,
-                content: `GV ${unlockReq.teacher?.fullName} đề xuất mở khóa sửa điểm lớp ${unlockReq.class?.className} (${semester}) trong ${unlockReq.durationMinutes} phút. Lý do: ${reason}`,
-                type: 'Đề xuất mở khóa điểm',
-                targetClassId: classId,
-                createdById: req.user.id
-            }
-        });
-
-        // Ghi vết Audit Log
-        await AuditLogService.log({
-            userId: req.user.id,
-            action: 'GRADE_UNLOCK_REQUESTED',
-            module: 'grade',
-            resource: 'GradeUnlockRequest',
-            resourceId: unlockReq.id,
-            newData: { classId, semester, durationMinutes, reason },
-            reason,
-            req,
-            severity: 'warning'
-        });
-
-        res.status(201).json({
-            message: 'Đã gửi đề xuất mở khóa sổ điểm lên Ban Giám Hiệu xét duyệt',
-            data: unlockReq
-        });
-    } catch (error) {
-        console.error('createUnlockRequest error:', error);
-        res.status(500).json({ message: 'Lỗi server khi tạo yêu cầu mở khóa sổ điểm' });
-    }
-};
-
-/**
- * Lấy danh sách các yêu cầu mở khóa sổ điểm
- */
-export const getUnlockRequests = async (req, res) => {
-    try {
-        const { classId, semester, status } = req.query;
-        const role = (req.user?.role || '').toLowerCase();
-        const isAdminOrPrincipal = ['admin', 'principal', 'vice_principal'].includes(role);
-
-        const where = {};
-        if (classId) where.classId = classId;
-        if (semester) where.semester = semester;
-        if (status) where.status = status;
-
-        // Nếu là giáo viên, chỉ xem các yêu cầu của chính mình
-        if (!isAdminOrPrincipal) {
-            const teacher = await prisma.teacher.findFirst({
-                where: { userId: req.user.id }
-            });
-            if (teacher) {
-                where.teacherId = teacher.id;
-            }
-        }
-
-        const requests = await prisma.gradeUnlockRequest.findMany({
-            where,
-            include: {
-                class: { select: { id: true, className: true, grade: true } },
-                teacher: { select: { id: true, fullName: true, teacherCode: true } },
-                approvedBy: { select: { id: true, username: true } }
             },
-            orderBy: { createdAt: 'desc' }
+            orderBy: { subject: { subjectCode: 'asc' } }
         });
 
-        res.json({ data: requests });
-    } catch (error) {
-        console.error('getUnlockRequests error:', error);
-        res.status(500).json({ message: 'Lỗi server khi lấy danh sách yêu cầu mở khóa' });
-    }
-};
-
-/**
- * BGH Phê duyệt yêu cầu mở khóa (Cấp cửa sổ TTL)
- */
-export const approveUnlockRequest = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { durationMinutes = 120, reason = 'Phê chuẩn điều chỉnh theo quy định' } = req.body;
-
-        const role = (req.user?.role || '').toLowerCase();
-        if (!['admin', 'principal', 'vice_principal'].includes(role)) {
-            return res.status(403).json({ message: 'Chỉ Ban Giám Hiệu mới có thẩm quyền phê duyệt mở khóa sổ điểm' });
-        }
-
-        const existingReq = await prisma.gradeUnlockRequest.findUnique({
-            where: { id },
-            include: { class: true, teacher: { include: { user: true } } }
+        // Lấy bản ghi tổng hợp học kỳ do GVCN đánh giá
+        const gradeSummary = await prisma.grade.findFirst({
+            where: {
+                studentId,
+                semester
+            }
         });
 
-        if (!existingReq) {
-            return res.status(404).json({ message: 'Không tìm thấy yêu cầu mở khóa' });
-        }
+        // Chỉ hiển thị điểm khi BGH hoặc GV đã khóa/công bố (nếu là học sinh/phụ huynh)
+        const isStudentOrParent = req.user.role === 'student' || req.user.role === 'parent';
 
-        const now = new Date();
-        const duration = Number(durationMinutes) || existingReq.durationMinutes || 120;
-        const expiresAt = new Date(now.getTime() + duration * 60 * 1000);
+        const sanitizedGrades = subjectGrades.map(sg => {
+            const isLocked = sg.status === 'locked';
+            return {
+                subjectId: sg.subjectId,
+                subjectCode: sg.subject?.subjectCode,
+                subjectName: sg.subject?.name,
+                teacherName: sg.teacher?.fullName || 'Chưa phân công',
+                assessmentType: sg.assessmentType,
+                // Nếu học sinh xem điểm nháp, thông báo rõ ràng
+                tx1: isStudentOrParent && !isLocked ? null : sg.tx1,
+                tx2: isStudentOrParent && !isLocked ? null : sg.tx2,
+                tx3: isStudentOrParent && !isLocked ? null : sg.tx3,
+                tx4: isStudentOrParent && !isLocked ? null : sg.tx4,
+                gk: isStudentOrParent && !isLocked ? null : sg.gk,
+                ck: isStudentOrParent && !isLocked ? null : sg.ck,
+                avgScore: isStudentOrParent && !isLocked ? null : sg.avgScore,
+                feedbackResult: isStudentOrParent && !isLocked ? null : sg.feedbackResult,
+                teacherRemark: sg.teacherRemark || '',
+                status: sg.status
+            };
+        });
 
-        const updatedReq = await prisma.gradeUnlockRequest.update({
-            where: { id },
-            data: {
-                status: 'approved',
-                durationMinutes: duration,
-                approvedById: req.user.id,
-                approvedAt: now,
-                expiresAt: expiresAt
+        return res.json({
+            success: true,
+            student: {
+                studentId: student.id,
+                studentCode: student.studentCode,
+                fullName: student.fullName,
+                className: student.class?.className || 'Chưa xếp lớp',
+                homeroomTeacher: student.class?.homeroomTeacher?.fullName || 'Chưa phân công'
             },
-            include: { class: true, teacher: true }
-        });
-
-        // Tạo thông báo cho Giáo viên
-        await prisma.notification.create({
-            data: {
-                title: `Đã duyệt mở khóa sổ điểm: Lớp ${updatedReq.class?.className}`,
-                content: `Ban Giám Hiệu đã phê duyệt mở khóa sổ điểm lớp ${updatedReq.class?.className} trong ${duration} phút (Hiệu lực đến: ${expiresAt.toLocaleTimeString('vi-VN')}). Vui lòng hoàn tất điều chỉnh trước thời hạn.`,
-                type: 'Phê duyệt mở khóa sổ điểm',
-                targetClassId: updatedReq.classId,
-                createdById: req.user.id
-            }
-        });
-
-        // Ghi vết Audit Log
-        await AuditLogService.log({
-            userId: req.user.id,
-            action: 'GRADE_UNLOCK_APPROVED',
-            module: 'grade',
-            resource: 'GradeUnlockRequest',
-            resourceId: id,
-            newData: { expiresAt, durationMinutes: duration, approvedAt: now },
-            reason,
-            req,
-            severity: 'critical'
-        });
-
-        res.json({
-            message: `Đã phê duyệt mở khóa sổ điểm thành công (${duration} phút)`,
-            data: updatedReq
+            semester,
+            isPublished: gradeSummary?.status === 'locked',
+            summary: {
+                overallAvgScore: gradeSummary?.overallAvgScore ?? null,
+                conductScore: gradeSummary?.conductScore || 'Chưa đánh giá',
+                academicRank: gradeSummary?.academicRank || 'Chưa xếp loại',
+                titleAwarded: gradeSummary?.titleAwarded || null,
+                teacherRemark: gradeSummary?.teacherRemark || ''
+            },
+            subjectGrades: sanitizedGrades
         });
     } catch (error) {
-        console.error('approveUnlockRequest error:', error);
-        res.status(500).json({ message: 'Lỗi server khi phê duyệt mở khóa sổ điểm' });
+        console.error('getMyGrades error:', error);
+        return res.status(500).json({ success: false, message: 'Lỗi máy chủ khi tra cứu điểm' });
     }
 };
 
 /**
- * BGH Từ chối yêu cầu mở khóa
+ * =========================================================================
+ * 🌟 4. TƯƠNG THÍCH NGƯỢC (BACKWARD COMPATIBILITY CHO CONTROLLERS CŨ)
+ * =========================================================================
  */
-export const rejectUnlockRequest = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { rejectionReason = 'Không đủ căn cứ hoặc minh chứng chưa hợp lệ' } = req.body;
+export const getGradesByClass = async (req, res) => {
+    // Chuyển tiếp tự động đến handler mới hoặc phục vụ màn hình cũ
+    return getSubjectGradesByClass(req, res);
+};
 
-        const role = (req.user?.role || '').toLowerCase();
-        if (!['admin', 'principal', 'vice_principal'].includes(role)) {
-            return res.status(403).json({ message: 'Chỉ Ban Giám Hiệu mới có thẩm quyền từ chối yêu cầu mở khóa' });
-        }
+export const updateClassGrades = async (req, res) => {
+    return updateSubjectGradesByClass(req, res);
+};
 
-        const existingReq = await prisma.gradeUnlockRequest.findUnique({
-            where: { id },
-            include: { class: true, teacher: true }
-        });
-
-        if (!existingReq) {
-            return res.status(404).json({ message: 'Không tìm thấy yêu cầu mở khóa' });
-        }
-
-        const updatedReq = await prisma.gradeUnlockRequest.update({
-            where: { id },
-            data: {
-                status: 'rejected',
-                rejectionReason: rejectionReason.trim(),
-                approvedById: req.user.id,
-                approvedAt: new Date()
-            }
-        });
-
-        // Tạo thông báo phản hồi cho Giáo viên
-        await prisma.notification.create({
-            data: {
-                title: `Từ chối mở khóa sổ điểm: Lớp ${existingReq.class?.className}`,
-                content: `Ban Giám Hiệu từ chối yêu cầu mở khóa sửa điểm lớp ${existingReq.class?.className}. Lý do: ${rejectionReason}`,
-                type: 'Từ chối mở khóa sổ điểm',
-                targetClassId: existingReq.classId,
-                createdById: req.user.id
-            }
-        });
-
-        // Ghi vết Audit Log
-        await AuditLogService.log({
-            userId: req.user.id,
-            action: 'GRADE_UNLOCK_REJECTED',
-            module: 'grade',
-            resource: 'GradeUnlockRequest',
-            resourceId: id,
-            reason: rejectionReason,
-            req,
-            severity: 'warning'
-        });
-
-        res.json({
-            message: 'Đã từ chối yêu cầu mở khóa sổ điểm',
-            data: updatedReq
-        });
-    } catch (error) {
-        console.error('rejectUnlockRequest error:', error);
-        res.status(500).json({ message: 'Lỗi server khi từ chối yêu cầu mở khóa' });
-    }
+export const unlockClassGrades = async (req, res) => {
+    return unlockSubjectGrades(req, res);
 };

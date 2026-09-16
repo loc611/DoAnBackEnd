@@ -11,7 +11,10 @@ import { autoAssignFeeProfilesForStudent } from '../utils/feeAutoAssign.js';
 
 export const getStudents = async (req, res) => {
     try {
-        if (req.user.role === 'student') {
+        const userRole = (req.user?.role || '').toLowerCase();
+
+        // 1. Học sinh: Chỉ xem thông tin của chính mình
+        if (userRole === 'student') {
             const student = await prisma.student.findFirst({
                 where: { userId: req.user.id },
                 include: {
@@ -21,13 +24,52 @@ export const getStudents = async (req, res) => {
             });
             return res.json(student ? [student] : []);
         }
+
+        // 2. Phụ huynh: Chỉ xem danh sách con em của mình
+        if (userRole === 'parent') {
+            const parent = await prisma.parent.findFirst({
+                where: { userId: req.user.id },
+                include: { guardianLinks: { select: { studentId: true } } }
+            });
+            const studentIds = parent ? parent.guardianLinks.map(l => l.studentId) : [];
+            const students = await prisma.student.findMany({
+                where: { id: { in: studentIds } },
+                include: {
+                    user: { select: { email: true, status: true } },
+                    class: { select: { className: true } }
+                },
+                orderBy: { fullName: 'asc' }
+            });
+            return res.json(students);
+        }
+
+        // 3. Giáo viên bộ môn & Chủ nhiệm: Chỉ xem học sinh thuộc các lớp mình phụ trách
+        const isBgh = userRole === 'admin' || userRole === 'principal' || req.user.teacher?.position?.includes('Trưởng khoa') || req.user.teacher?.position?.includes('Ban giám hiệu');
+
+        if (userRole === 'teacher' && !isBgh && req.user.teacher) {
+            const teacherId = req.user.teacher.id;
+            const assignments = await prisma.teacherAssignment.findMany({ where: { teacherId }, select: { classId: true } });
+            const homerooms = await prisma.homeroomAssignment.findMany({ where: { teacherId }, select: { classId: true } });
+            const classIds = [...new Set([...assignments.map(a => a.classId), ...homerooms.map(h => h.classId)])];
+
+            const students = await prisma.student.findMany({
+                where: { classId: { in: classIds } },
+                include: {
+                    user: { select: { email: true, status: true } },
+                    class: { select: { className: true } }
+                },
+                orderBy: { studentCode: 'asc' }
+            });
+            return res.json(students);
+        }
         
+        // 4. BGH / Admin / Giám thị: Xem danh sách toàn trường
         const students = await prisma.student.findMany({
             include: {
                 user: { select: { username: true, email: true, status: true } },
                 class: { select: { className: true, grade: true } }
             },
-            orderBy: { createdAt: 'desc' }
+            orderBy: { studentCode: 'asc' }
         });
         res.json(students);
     } catch (error) {
@@ -69,33 +111,34 @@ export const getStudentById = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy học sinh' });
         }
 
-        // Kiểm tra quyền xem hồ sơ cơ bản
-        if (req.user && req.user.can) {
-            const basicCheck = await req.user.can('profile.view_basic', { student, studentId: student.id });
-            if (!basicCheck.allowed) {
-                return res.status(403).json({ success: false, message: basicCheck.reason });
-            }
+        const userRole = (req.user?.role || '').toLowerCase();
+        const isAdmin = userRole === 'admin' || userRole === 'principal';
 
-            // Kiểm tra quyền xem hồ sơ nhạy cảm (Khuyết tật, sức khỏe đặc biệt, phán quyết ly hôn)
-            const sensitiveCheck = await req.user.can('profile.view_sensitive', { student, studentId: student.id });
-            if (!sensitiveCheck.allowed) {
-                // Che các trường bảo mật cao
-                student.specialNeedsNote = '[BẢO MẬT: Chỉ Cán bộ Tham vấn, GVCN và BGH mới có quyền xem]';
-            } else if (student.specialNeedsNote) {
-                // Ghi vết truy cập hồ sơ nhạy cảm
-                await AuditLogService.log({
-                    userId: req.user.id,
-                    action: 'VIEW_SENSITIVE_PROFILE',
-                    module: 'profile',
-                    resource: 'Student',
-                    resourceId: student.id,
-                    reason: 'Truy cập hồ sơ y tế / tâm lý / nhu cầu đặc biệt của học sinh',
-                    req,
-                    severity: 'warning'
-                });
+        // Kiểm tra chống IDOR:
+        if (userRole === 'student' && student.userId !== req.user.id) {
+            return res.status(403).json({ success: false, message: 'Học sinh chỉ được xem hồ sơ của chính mình' });
+        }
+
+        if (userRole === 'parent') {
+            const isAuthorizedParent = student.guardianLinks.some(link => 
+                link.parent?.userId === req.user.id && link.custodyType !== 'none'
+            );
+            if (!isAuthorizedParent && !isAdmin) {
+                return res.status(403).json({ success: false, message: 'Bạn không có quyền xem hồ sơ của học sinh này' });
             }
         }
-        
+
+        // Lọc bớt thông tin tài chính nhạy cảm nếu người xem không phải Admin, Kế toán, hoặc Phụ huynh/Học sinh đó
+        const canViewFinance = isAdmin || 
+                               userRole === 'accountant' || 
+                               userRole === 'office_staff' ||
+                               (userRole === 'student' && student.userId === req.user.id) ||
+                               (userRole === 'parent' && student.guardianLinks.some(l => l.parent?.userId === req.user.id && l.accessFinances));
+
+        if (!canViewFinance) {
+            delete student.feeBills;
+        }
+
         res.json(student);
     } catch (error) {
         console.error(error);
@@ -241,6 +284,7 @@ export const updateStudent = async (req, res) => {
                 return res.status(400).json({ message: 'Mã học sinh là trường bất biến, không thể thay đổi' });
             }
         }
+        const immutableStudentCode = student.studentCode;
 
         // Validate Email nếu có cập nhật
         if (email !== undefined && email !== null && email !== '' && student.userId) {
@@ -264,6 +308,7 @@ export const updateStudent = async (req, res) => {
                 return res.status(400).json({ message: 'Trạng thái tài khoản không hợp lệ' });
             }
         }
+
 
         // Validate số điện thoại cá nhân (định dạng + duy nhất toàn hệ thống)
         if (phone !== undefined && phone !== null && phone !== '') {
@@ -318,6 +363,7 @@ export const updateStudent = async (req, res) => {
             return await tx.student.update({
                 where: { id: req.params.id },
                 data: {
+                    studentCode: immutableStudentCode,
                     fullName: fullName !== undefined ? fullName.trim() : undefined,
                     gender: gender !== undefined ? gender : undefined,
                     dateOfBirth: parsedDob,

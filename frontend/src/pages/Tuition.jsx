@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Edit, X, DollarSign, Wallet, CreditCard, PieChart, Users, CheckCircle, Printer, Layers } from 'lucide-react';
+import { Search, Plus, Edit, X, DollarSign, Wallet, CreditCard, PieChart, Users, CheckCircle, Printer, Layers, ShieldCheck, Trash2 } from 'lucide-react';
 import api from '../services/api';
 import Swal from 'sweetalert2';
 import GradeClassSelector from '../components/GradeClassSelector';
@@ -702,6 +702,69 @@ const Tuition = () => {
     const [selectedBillToPrint, setSelectedBillToPrint] = useState(null);
     const [selectedPrintClass, setSelectedPrintClass] = useState('');
 
+    // Policy Engine States
+    const [policiesList, setPoliciesList] = useState([]);
+    const [policiesLoading, setPoliciesLoading] = useState(false);
+    const [isAddPolicyModalOpen, setIsAddPolicyModalOpen] = useState(false);
+    const [allStudentsList, setAllStudentsList] = useState([]);
+    const [newPolicyData, setNewPolicyData] = useState({
+        studentId: '',
+        policyType: 'POOR_HOUSEHOLD',
+        policyName: 'Hộ nghèo',
+        discountRate: 0.7,
+        documentNumber: '',
+        documentExpiryDate: '',
+        notes: ''
+    });
+
+    const fetchStudentPolicies = async () => {
+        try {
+            setPoliciesLoading(true);
+            const [polRes, stRes] = await Promise.all([
+                api.get('/policies'),
+                api.get('/students?limit=500')
+            ]);
+            setPoliciesList(polRes.data?.data || []);
+            setAllStudentsList(stRes.data?.data || stRes.data?.students || []);
+        } catch (err) {
+            console.error('Lỗi tải danh sách chính sách:', err);
+        } finally {
+            setPoliciesLoading(false);
+        }
+    };
+
+    const handleDeletePolicy = async (policyId) => {
+        const confirm = await Swal.fire({
+            title: 'Xóa chính sách',
+            text: 'Bạn có chắc chắn muốn hủy áp dụng chính sách ưu đãi này?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Đồng ý xóa',
+            cancelButtonText: 'Hủy'
+        });
+        if (confirm.isConfirmed) {
+            try {
+                await api.delete(`/policies/${policyId}`);
+                Swal.fire('Thành công', 'Đã xóa chính sách thành công', 'success');
+                fetchStudentPolicies();
+            } catch (e) {
+                Swal.fire('Lỗi', 'Không thể xóa chính sách', 'error');
+            }
+        }
+    };
+
+    const handleCreatePolicy = async (e) => {
+        e.preventDefault();
+        try {
+            await api.post('/policies', newPolicyData);
+            Swal.fire('Thành công', 'Đã thêm chính sách miễn giảm cho học sinh thành công', 'success');
+            setIsAddPolicyModalOpen(false);
+            fetchStudentPolicies();
+        } catch (err) {
+            Swal.fire('Lỗi', err.response?.data?.message || 'Có lỗi khi tạo chính sách', 'error');
+        }
+    };
+
     useEffect(() => {
         fetchData();
         fetchClasses();
@@ -972,6 +1035,23 @@ const Tuition = () => {
                     <span>Theo Dõi Học Phí Theo Lớp</span>
                     <span className="ml-1.5 px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded-full font-bold">
                         {classesList.length} lớp
+                    </span>
+                </button>
+                <button
+                    onClick={() => {
+                        setActiveTab('policies');
+                        fetchStudentPolicies();
+                    }}
+                    className={`flex items-center space-x-2 px-5 py-3 font-semibold text-sm border-b-2 transition-all ${
+                        activeTab === 'policies'
+                            ? 'border-purple-600 text-purple-600 bg-purple-50/50 rounded-t-xl'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-t-xl'
+                    }`}
+                >
+                    <ShieldCheck size={18} />
+                    <span>Chính Sách Miễn Giảm (Policy Engine)</span>
+                    <span className="ml-1.5 px-2 py-0.5 text-xs bg-purple-100 text-purple-800 rounded-full font-bold">
+                        {policiesList.length}
                     </span>
                 </button>
             </div>
@@ -1368,6 +1448,106 @@ const Tuition = () => {
                 </div>
             )}
 
+            {/* TAB 3: CHÍNH SÁCH MIỄN GIẢM (POLICY ENGINE) */}
+            {activeTab === 'policies' && (
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden space-y-4 p-6">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-gray-100">
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                <ShieldCheck size={22} className="text-purple-600" />
+                                Quản lý Chính Sách Miễn Giảm Học Phí
+                            </h3>
+                            <p className="text-xs text-gray-500 mt-0.5">Tự động hóa khấu trừ học phí theo đối tượng chính sách an sinh giáo dục</p>
+                        </div>
+                        <button
+                            onClick={() => setIsAddPolicyModalOpen(true)}
+                            className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/20 flex items-center gap-2"
+                        >
+                            <Plus size={16} /> + Thêm Đối Tượng Ưu Tiên
+                        </button>
+                    </div>
+
+                    {policiesLoading ? (
+                        <div className="py-16 text-center text-gray-400">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-2"></div>
+                            Đang tải danh sách chính sách miễn giảm...
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto border border-gray-100 rounded-xl">
+                            <table className="w-full text-left text-xs text-gray-600">
+                                <thead className="bg-gray-50 text-gray-700 font-bold uppercase">
+                                    <tr>
+                                        <th className="px-5 py-3.5">Học sinh</th>
+                                        <th className="px-5 py-3.5">Lớp</th>
+                                        <th className="px-5 py-3.5">Diện chính sách</th>
+                                        <th className="px-5 py-3.5 text-center">Mức giảm</th>
+                                        <th className="px-5 py-3.5">Số quyết định / Hạn giấy tờ</th>
+                                        <th className="px-5 py-3.5 text-center">Trạng thái</th>
+                                        <th className="px-5 py-3.5 text-right">Thao tác</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {policiesList.map((pol) => {
+                                        const isExp = pol.documentExpiryDate && new Date(pol.documentExpiryDate) < new Date();
+                                        return (
+                                            <tr key={pol.id} className="hover:bg-purple-50/30 transition-colors">
+                                                <td className="px-5 py-3.5 font-bold text-gray-900">
+                                                    {pol.student?.fullName}
+                                                    <span className="block text-[11px] text-gray-400 font-normal">{pol.student?.studentCode}</span>
+                                                </td>
+                                                <td className="px-5 py-3.5 font-semibold text-gray-700">
+                                                    {pol.student?.class?.className || 'Chưa xếp lớp'}
+                                                </td>
+                                                <td className="px-5 py-3.5">
+                                                    <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-purple-100 text-purple-800">
+                                                        {pol.policyName}
+                                                    </span>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-center font-black text-purple-700 text-sm">
+                                                    {Math.round((pol.discountRate || 0) * 100)}%
+                                                </td>
+                                                <td className="px-5 py-3.5 text-[11px] text-gray-600">
+                                                    <p>Số: <strong>{pol.documentNumber || 'N/A'}</strong></p>
+                                                    {pol.documentExpiryDate && (
+                                                        <p className={isExp ? 'text-red-600 font-bold' : 'text-gray-500'}>
+                                                            Hạn: {new Date(pol.documentExpiryDate).toLocaleDateString('vi-VN')} {isExp && '(Hết hạn)'}
+                                                        </p>
+                                                    )}
+                                                </td>
+                                                <td className="px-5 py-3.5 text-center">
+                                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                                        isExp ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
+                                                    }`}>
+                                                        {isExp ? 'HẾT HẠN' : 'ĐANG HIỆU LỰC'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-right">
+                                                    <button
+                                                        onClick={() => handleDeletePolicy(pol.id)}
+                                                        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Xóa chính sách"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+
+                                    {policiesList.length === 0 && (
+                                        <tr>
+                                            <td colSpan={7} className="px-5 py-12 text-center text-gray-400">
+                                                Chưa có học sinh nào được áp dụng chính sách miễn giảm học phí.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
+
             <AnimatePresence>
                 <FeeProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} profile={selectedProfile} classesList={classesList} onSubmit={handleProfileSubmit} />
                 <AssignModal isOpen={isAssignModalOpen} onClose={() => setIsAssignModalOpen(false)} profile={profileToAssign} classesList={classesList} onSubmit={handleAssignSubmit} />
@@ -1396,6 +1576,143 @@ const Tuition = () => {
                     bill={selectedBillToPrint}
                     className={selectedPrintClass}
                 />
+
+                {isAddPolicyModalOpen && (
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden"
+                        >
+                            <div className="p-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white flex justify-between items-center">
+                                <h3 className="font-bold text-lg flex items-center gap-2">
+                                    <ShieldCheck size={20} /> Thêm Đối Tượng Ưu Tiên Miễn Giảm
+                                </h3>
+                                <button
+                                    onClick={() => setIsAddPolicyModalOpen(false)}
+                                    className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleCreatePolicy} className="p-6 space-y-4">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-700 block mb-1">Chọn học sinh áp dụng *</label>
+                                    <select
+                                        required
+                                        value={newPolicyData.studentId}
+                                        onChange={e => setNewPolicyData({ ...newPolicyData, studentId: e.target.value })}
+                                        className="w-full text-xs font-semibold p-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-purple-500"
+                                    >
+                                        <option value="">-- Chọn học sinh ({allStudentsList.length} HS) --</option>
+                                        {allStudentsList.map(st => (
+                                            <option key={st.id} value={st.id}>
+                                                {st.fullName} ({st.studentCode}) - {st.class?.className || 'Chưa lớp'}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-700 block mb-1">Diện ưu tiên *</label>
+                                        <select
+                                            value={newPolicyData.policyType}
+                                            onChange={e => {
+                                                const type = e.target.value;
+                                                let defaultRate = 0.5;
+                                                let name = 'Chính sách khác';
+                                                if (type === 'MARTYR_CHILD') { defaultRate = 1.0; name = 'Con thương binh, liệt sĩ'; }
+                                                else if (type === 'POOR_HOUSEHOLD') { defaultRate = 0.7; name = 'Hộ nghèo'; }
+                                                else if (type === 'NEAR_POOR') { defaultRate = 0.5; name = 'Hộ cận nghèo'; }
+                                                else if (type === 'DISABILITY') { defaultRate = 0.7; name = 'Học sinh khuyết tật'; }
+                                                else if (type === 'TEACHER_CHILD') { defaultRate = 0.3; name = 'Con cán bộ / giáo viên'; }
+                                                else if (type === 'ORPHAN') { defaultRate = 0.7; name = 'Học sinh mồ côi'; }
+                                                else if (type === 'MERIT_SCHOLARSHIP') { defaultRate = 0.5; name = 'Học bổng khuyến học'; }
+                                                setNewPolicyData({ ...newPolicyData, policyType: type, policyName: name, discountRate: defaultRate });
+                                            }}
+                                            className="w-full text-xs font-semibold p-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-purple-500"
+                                        >
+                                            <option value="MARTYR_CHILD">Con liệt sĩ / TB (100%)</option>
+                                            <option value="POOR_HOUSEHOLD">Hộ nghèo (70-100%)</option>
+                                            <option value="NEAR_POOR">Hộ cận nghèo (50%)</option>
+                                            <option value="DISABILITY">Học sinh khuyết tật (70%)</option>
+                                            <option value="TEACHER_CHILD">Con GV trong trường (30%)</option>
+                                            <option value="ORPHAN">Mồ côi (70%)</option>
+                                            <option value="MERIT_SCHOLARSHIP">Học bổng khuyến học (50%)</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-700 block mb-1">Tỷ lệ giảm (%) *</label>
+                                        <input
+                                            type="number"
+                                            step="0.05"
+                                            min="0"
+                                            max="1"
+                                            value={newPolicyData.discountRate}
+                                            onChange={e => setNewPolicyData({ ...newPolicyData, discountRate: parseFloat(e.target.value) })}
+                                            className="w-full text-xs font-semibold p-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-purple-500"
+                                        />
+                                        <span className="text-[10px] text-gray-400">VD: 0.7 tương đương giảm 70%</span>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-700 block mb-1">Số quyết định / Thẻ xác nhận</label>
+                                        <input
+                                            type="text"
+                                            placeholder="VD: 142/QĐ-UBND"
+                                            value={newPolicyData.documentNumber}
+                                            onChange={e => setNewPolicyData({ ...newPolicyData, documentNumber: e.target.value })}
+                                            className="w-full text-xs font-semibold p-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-purple-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-700 block mb-1">Ngày hết hạn giấy tờ</label>
+                                        <input
+                                            type="date"
+                                            value={newPolicyData.documentExpiryDate}
+                                            onChange={e => setNewPolicyData({ ...newPolicyData, documentExpiryDate: e.target.value })}
+                                            className="w-full text-xs font-semibold p-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-purple-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-bold text-gray-700 block mb-1">Ghi chú xác minh</label>
+                                    <textarea
+                                        rows={2}
+                                        placeholder="Đã đối chiếu bản gốc sổ hộ nghèo do UBND cấp..."
+                                        value={newPolicyData.notes}
+                                        onChange={e => setNewPolicyData({ ...newPolicyData, notes: e.target.value })}
+                                        className="w-full text-xs p-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-purple-500"
+                                    />
+                                </div>
+
+                                <div className="pt-2 flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsAddPolicyModalOpen(false)}
+                                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold"
+                                    >
+                                        Hủy
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-md shadow-purple-600/20"
+                                    >
+                                        ✓ Lưu Chính Sách
+                                    </button>
+                                </div>
+                            </form>
+                        </motion.div>
+                    </div>
+                )}
             </AnimatePresence>
         </div>
     );

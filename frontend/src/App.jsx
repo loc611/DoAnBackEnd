@@ -26,6 +26,8 @@ import StudentAttendance from './pages/StudentAttendance';
 import ExamSchedule from './pages/ExamSchedule';
 import StudentExamSchedule from './pages/StudentExamSchedule';
 import Profile from './pages/Profile';
+import LessonLogbook from './pages/LessonLogbook';
+import Petitions from './pages/Petitions';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -61,6 +63,8 @@ function App() {
                 <Route path="exams" element={<ExamSchedule />} />
                 <Route path="users" element={<UsersManagement />} />
                 <Route path="tuition" element={<Tuition />} />
+                <Route path="lesson-logs" element={<LessonLogbook />} />
+                <Route path="petitions" element={<Petitions />} />
                 <Route path="settings" element={<Settings />} />
 
                 {/* Teacher Specific Routes */}
