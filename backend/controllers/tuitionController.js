@@ -11,10 +11,19 @@ export const getDashboardSummary = async (req, res) => {
 
         const bills = await prisma.feeBill.findMany({
             where: Object.keys(feeProfileFilter).length > 0 ? { feeProfile: feeProfileFilter } : {},
-            include: {
-                feeProfile: true,
+            select: {
+                status: true,
+                finalAmount: true,
+                studentId: true,
+                feeProfile: {
+                    select: { amount: true }
+                },
                 student: {
-                    include: { class: true }
+                    select: {
+                        class: {
+                            select: { className: true }
+                        }
+                    }
                 }
             }
         });

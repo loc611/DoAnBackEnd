@@ -77,8 +77,8 @@ const LessonLogbook = () => {
 
   const fetchClassDetails = async () => {
     try {
-      const res = await api.get(`/classes/${selectedClass}`);
-      const stList = res.data?.data?.students || res.data?.students || [];
+      const res = await api.get(`/classes/${selectedClass}/students`);
+      const stList = Array.isArray(res.data) ? res.data : (res.data?.data || res.data?.students || []);
       setStudents(stList);
     } catch (e) {
       console.error('Lỗi lấy học sinh lớp:', e);

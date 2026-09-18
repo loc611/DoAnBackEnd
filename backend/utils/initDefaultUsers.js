@@ -121,11 +121,12 @@ export const initDefaultUsers = async () => {
         }
 
         // 2. Check Teachers
-        const teacherPassHash = await bcrypt.hash('teacher123', 10);
         const teacherRole = await prisma.role.findUnique({ where: { name: 'subject_teacher' } }) ||
                             await prisma.role.findUnique({ where: { name: 'teacher' } });
 
         for (const teacherData of DEFAULT_TEACHERS) {
+            const teacherPassword = `${teacherData.username}@123`;
+            const teacherPassHash = await bcrypt.hash(teacherPassword, 10);
             const existingTeacher = await prisma.teacher.findFirst({
                 where: {
                     OR: [
@@ -219,7 +220,7 @@ export const initDefaultUsers = async () => {
             include: { student: true }
         });
 
-        const studentPassHash = await bcrypt.hash('student123', 10);
+        const studentPassHash = await bcrypt.hash('hs001@123', 10);
         if (!studentUser) {
             await prisma.$transaction(async (tx) => {
                 const createdUser = await tx.user.create({
@@ -246,7 +247,7 @@ export const initDefaultUsers = async () => {
                     });
                 }
             });
-            console.log('✅ Default Student created: hs001@school.edu.vn / student123');
+            console.log('✅ Default Student created: hs001@school.edu.vn / hs001@123');
         } else {
             await prisma.user.update({
                 where: { id: studentUser.id },

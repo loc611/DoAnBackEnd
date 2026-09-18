@@ -155,30 +155,36 @@ export const reviewPetition = async (req, res) => {
             const loopDate = new Date(curr);
             loopDate.setHours(0, 0, 0, 0);
 
-            for (const session of ['morning', 'afternoon']) {
-              await prisma.attendance.upsert({
-                where: {
-                  studentId_classId_date_session: {
+            for (const sess of ['morning', 'afternoon']) {
+              const periods = sess === 'morning' ? [1, 2, 3, 4, 5] : [6, 7, 8, 9, 10];
+              for (const pNum of periods) {
+                await prisma.attendance.upsert({
+                  where: {
+                    studentId_classId_date_periodNumber: {
+                      studentId: petition.studentId,
+                      classId: petition.student.classId,
+                      date: loopDate,
+                      periodNumber: pNum
+                    }
+                  },
+                  update: {
+                    status: 'excused',
+                    session: sess,
+                    note: `Nghỉ có phép theo đơn duyệt #${petition.id.slice(0, 8)}`
+                  },
+                  create: {
                     studentId: petition.studentId,
                     classId: petition.student.classId,
                     date: loopDate,
-                    session
+                    periodNumber: pNum,
+                    periodName: `Tiết ${pNum}`,
+                    session: sess,
+                    status: 'excused',
+                    note: `Nghỉ có phép theo đơn duyệt #${petition.id.slice(0, 8)}`,
+                    markedById: req.user?.id
                   }
-                },
-                update: {
-                  status: 'excused',
-                  note: `Nghỉ có phép theo đơn duyệt #${petition.id.slice(0, 8)}`
-                },
-                create: {
-                  studentId: petition.studentId,
-                  classId: petition.student.classId,
-                  date: loopDate,
-                  session,
-                  status: 'excused',
-                  note: `Nghỉ có phép theo đơn duyệt #${petition.id.slice(0, 8)}`,
-                  markedById: req.user?.id
-                }
-              });
+                });
+              }
             }
             curr.setDate(curr.getDate() + 1);
           }

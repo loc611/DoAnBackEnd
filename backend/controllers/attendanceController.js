@@ -75,6 +75,16 @@ export const getPeriodsByDate = async (req, res) => {
         });
         const markedPeriodNumbers = new Set(existingAttendances.map(a => a.periodNumber));
 
+        // Lấy phân công giáo viên giảng dạy của lớp này
+        const teacherAssignments = await prisma.teacherAssignment.findMany({
+            where: { classId },
+            include: { teacher: { select: { fullName: true } } }
+        });
+        const assignmentTeacherMap = new Map();
+        teacherAssignments.forEach(ta => {
+            if (ta.subjectId) assignmentTeacherMap.set(ta.subjectId, ta.teacher?.fullName);
+        });
+
         const availablePeriods = [];
         for (const sch of schedules) {
             const subjectName = sch[dayField]?.trim();
@@ -82,6 +92,7 @@ export const getPeriodsByDate = async (req, res) => {
                 const match = sch.period.match(/\d+/);
                 const periodNum = match ? parseInt(match[0], 10) : 1;
                 const foundSubject = subjectMap.get(subjectName.toLowerCase());
+                const assignedTeacherName = foundSubject ? assignmentTeacherMap.get(foundSubject.id) : null;
 
                 availablePeriods.push({
                     periodNumber: periodNum,
@@ -89,7 +100,7 @@ export const getPeriodsByDate = async (req, res) => {
                     subjectName: foundSubject ? foundSubject.name : subjectName,
                     subjectId: foundSubject ? foundSubject.id : null,
                     subjectType: foundSubject ? foundSubject.type : 'Bắt buộc',
-                    teacherName: foundSubject?.teacher?.fullName || 'Chưa phân công',
+                    teacherName: assignedTeacherName || foundSubject?.teacher?.fullName || 'Chưa phân công',
                     isMarked: markedPeriodNumbers.has(periodNum)
                 });
             }
@@ -162,11 +173,22 @@ export const getClassAttendance = async (req, res) => {
                         include: { teacher: { select: { fullName: true } } }
                     });
 
+                    let assignedTeacherName = foundSubj?.teacher?.fullName;
+                    if (foundSubj) {
+                        const classAssignment = await prisma.teacherAssignment.findFirst({
+                            where: { classId, subjectId: foundSubj.id },
+                            include: { teacher: { select: { fullName: true } } }
+                        });
+                        if (classAssignment?.teacher?.fullName) {
+                            assignedTeacherName = classAssignment.teacher.fullName;
+                        }
+                    }
+
                     currentSubjectInfo = {
                         name: foundSubj ? foundSubj.name : subjName,
                         id: foundSubj ? foundSubj.id : null,
                         type: foundSubj ? foundSubj.type : 'Bắt buộc',
-                        teacherName: foundSubj?.teacher?.fullName || 'Chưa phân công'
+                        teacherName: assignedTeacherName || 'Chưa phân công'
                     };
                 }
             }
@@ -459,6 +481,10 @@ export const getAttendanceOverview = async (req, res) => {
                             gte: targetDate,
                             lt: new Date(targetDate.getTime() + 24 * 60 * 60 * 1000)
                         }
+                    },
+                    select: {
+                        id: true,
+                        status: true
                     }
                 }
             }
@@ -481,7 +507,7 @@ export const getAttendanceOverview = async (req, res) => {
                 present,
                 absent,
                 late,
-                rate: totalStudents > 0 && marked ? Math.round((present / totalStudents) * 100) : null
+                rate: records.length > 0 ? Math.min(100, Math.round(((present + late * 0.8) / records.length) * 100)) : null
             };
         });
 

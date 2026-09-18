@@ -46,18 +46,11 @@ const Profile = () => {
 
     try {
       setUpdatingPassword(true);
-      if (userRole === 'student') {
-        const res = await api.put('/student/change-password', {
-          currentPassword: passwordForm.currentPassword,
-          newPassword: passwordForm.newPassword
-        });
-        Swal.fire('Thành công', res.data?.message || 'Đổi mật khẩu thành công!', 'success');
-      } else {
-        await api.patch(`/users/${userData.id}/reset-password`, {
-          newPassword: passwordForm.newPassword
-        });
-        Swal.fire('Thành công', 'Đổi mật khẩu thành công!', 'success');
-      }
+      const res = await api.post('/auth/change-password', {
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword
+      });
+      Swal.fire('Thành công', res.data?.message || 'Đổi mật khẩu thành công!', 'success');
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (err) {
       console.error(err);

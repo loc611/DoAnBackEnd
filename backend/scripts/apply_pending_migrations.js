@@ -160,6 +160,23 @@ export async function applyPendingMigrations() {
       );
     `);
 
+    // 7. Cập nhật unique constraint cho Attendance: studentId + classId + date + periodNumber
+    await pool.query(`
+      ALTER TABLE "Attendance" ADD COLUMN IF NOT EXISTS "periodNumber" INTEGER DEFAULT 1;
+      UPDATE "Attendance" SET "periodNumber" = 1 WHERE "periodNumber" IS NULL;
+      
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'Attendance_studentId_classId_date_periodNumber_key'
+        ) THEN
+          ALTER TABLE "Attendance" DROP CONSTRAINT IF EXISTS "Attendance_studentId_classId_date_session_key";
+          ALTER TABLE "Attendance" ADD CONSTRAINT "Attendance_studentId_classId_date_periodNumber_key" 
+            UNIQUE ("studentId", "classId", "date", "periodNumber");
+        END IF;
+      EXCEPTION WHEN others THEN null;
+      END $$;
+    `);
+
     console.log('✅ Đã áp dụng toàn bộ migrations CSDL thành công!');
   } catch (err) {
     console.error('❌ Lỗi khi áp dụng migration:', err);

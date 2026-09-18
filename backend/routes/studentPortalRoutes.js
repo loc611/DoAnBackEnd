@@ -117,34 +117,45 @@ router.put('/absences/:id/approve', authorize('teacher', 'admin', 'principal', '
             if (classId) {
                 const sessionsToMark = absence.session === 'all_day' ? ['morning', 'afternoon'] : [absence.session || 'morning'];
 
+                const periodMap = {
+                    morning: [1, 2, 3, 4, 5],
+                    afternoon: [6, 7, 8, 9, 10]
+                };
+
                 for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
                     const curDate = new Date(d);
                     curDate.setHours(0, 0, 0, 0);
 
                     for (const sess of sessionsToMark) {
-                        await prisma.attendance.upsert({
-                            where: {
-                                studentId_classId_date_session: {
+                        const periods = periodMap[sess] || [1];
+                        for (const pNum of periods) {
+                            await prisma.attendance.upsert({
+                                where: {
+                                    studentId_classId_date_periodNumber: {
+                                        studentId: absence.studentId,
+                                        classId: classId,
+                                        date: curDate,
+                                        periodNumber: pNum
+                                    }
+                                },
+                                update: {
+                                    status: 'excused',
+                                    session: sess,
+                                    note: `Nghỉ phép theo đơn: ${absence.reason}`
+                                },
+                                create: {
                                     studentId: absence.studentId,
                                     classId: classId,
                                     date: curDate,
-                                    session: sess
+                                    periodNumber: pNum,
+                                    periodName: `Tiết ${pNum}`,
+                                    session: sess,
+                                    status: 'excused',
+                                    note: `Nghỉ phép theo đơn: ${absence.reason}`,
+                                    markedById: req.user.id
                                 }
-                            },
-                            update: {
-                                status: 'excused',
-                                note: `Nghỉ phép theo đơn: ${absence.reason}`
-                            },
-                            create: {
-                                studentId: absence.studentId,
-                                classId: classId,
-                                date: curDate,
-                                session: sess,
-                                status: 'excused',
-                                note: `Nghỉ phép theo đơn: ${absence.reason}`,
-                                markedById: req.user.id
-                            }
-                        });
+                            });
+                        }
                     }
                 }
 
