@@ -46,6 +46,7 @@ import {
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useTeacherContext } from '../context/TeacherContext';
 import StudentDashboard from '../components/student/StudentDashboard';
 
 ChartJS.register(
@@ -119,6 +120,7 @@ const Dashboard = () => {
   }
 
   const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+  const teacherCtx = useTeacherContext();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -187,8 +189,8 @@ const Dashboard = () => {
             tuitionCompleted: tuitionRate
           });
         } else if (userRole === 'teacher') {
-          if (userData.classId || (userData.homeroomClasses && userData.homeroomClasses[0]?.id)) {
-            const classId = userData.homeroomClasses ? userData.homeroomClasses[0]?.id : userData.classId;
+          const classId = teacherCtx?.homeroomClass?.classId || (userData.homeroomClasses && userData.homeroomClasses[0]?.id) || userData.classId;
+          if (classId) {
             const schedRes = await api.get(`/schedule/class/${classId}?semester=HK1_2026`).catch(() => ({ data: [] }));
             setTodaySchedule(schedRes.data || []);
           }
@@ -218,6 +220,14 @@ const Dashboard = () => {
 
     fetchDashboardData();
   }, [userRole]);
+
+  useEffect(() => {
+    if (userRole === 'teacher' && teacherCtx?.homeroomClass?.classId && todaySchedule.length === 0) {
+      api.get(`/schedule/class/${teacherCtx.homeroomClass.classId}?semester=HK1_2026`)
+        .then(res => setTodaySchedule(res.data || []))
+        .catch(() => {});
+    }
+  }, [userRole, teacherCtx?.homeroomClass?.classId, todaySchedule.length]);
 
   const handleTriggerScan = async () => {
     try {
@@ -415,7 +425,12 @@ const Dashboard = () => {
   // 1. TEACHER DASHBOARD VIEW
   // ==========================================
   if (userRole === 'teacher') {
-    const homeroom = userData.homeroomClasses && userData.homeroomClasses.length > 0 ? userData.homeroomClasses[0] : null;
+    const homeroom = teacherCtx?.homeroomClass 
+      ? { ...teacherCtx.homeroomClass, className: teacherCtx.homeroomClass.className, grade: teacherCtx.homeroomClass.gradeLevel }
+      : (userData.homeroomClasses && userData.homeroomClasses.length > 0 ? userData.homeroomClasses[0] : null);
+    const teacherName = teacherCtx?.teacherInfo?.fullName || userData.name || 'Thầy/Cô';
+    const teacherSpecialization = teacherCtx?.teacherInfo?.specialization || userData.specialization || 'Toán học';
+    const teacherCode = teacherCtx?.teacherInfo?.teacherCode || userData.teacherCode || 'GV001';
 
     return (
       <div className="space-y-6">
@@ -428,10 +443,10 @@ const Dashboard = () => {
                 Cổng Giảng Dạy & Nghiệp Vụ
               </span>
               <h1 className="text-2xl sm:text-3xl font-black mt-2 tracking-tight">
-                {getTimeGreeting()}, Thầy/Cô {userData.name}!
+                {getTimeGreeting()}, Thầy/Cô {teacherName}!
               </h1>
               <p className="text-emerald-100 text-xs sm:text-sm mt-1">
-                Bộ môn: <strong className="text-white">{userData.specialization || 'Toán học'}</strong> • Mã GV: <strong className="text-white">{userData.teacherCode || 'GV001'}</strong> • Năm học 2026-2027
+                Bộ môn: <strong className="text-white">{teacherSpecialization}</strong> • Mã GV: <strong className="text-white">{teacherCode}</strong> • Năm học 2026-2027
               </p>
             </div>
 
@@ -509,29 +524,47 @@ const Dashboard = () => {
             </div>
 
             <div className="space-y-2.5">
-              {[
-                { period: 'Tiết 1 (07:00 - 07:45)', subject: 'Toán Đại số', class: homeroom ? homeroom.className : '10A1', room: 'Phòng 204' },
-                { period: 'Tiết 2 (07:50 - 08:35)', subject: 'Toán Hình học', class: homeroom ? homeroom.className : '10A1', room: 'Phòng 204' },
-                { period: 'Tiết 4 (09:45 - 10:30)', subject: 'Toán Đại số', class: '10A2', room: 'Phòng 205' },
-              ].map((item, idx) => (
-                <div key={idx} className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl flex items-center justify-between border border-slate-100 dark:border-slate-700/60 hover:border-emerald-300 dark:hover:border-emerald-600 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center font-bold text-xs">
-                      P{idx + 1}
+              {(() => {
+                const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                const dayField = days[new Date().getDay()];
+                const dayPeriods = todaySchedule.filter(s => s[dayField] && s[dayField] !== '-' && s[dayField].trim() !== '');
+
+                if (dayPeriods.length > 0) {
+                  return dayPeriods.map((item, idx) => (
+                    <div key={idx} className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl flex items-center justify-between border border-slate-100 dark:border-slate-700/60 hover:border-emerald-300 dark:hover:border-emerald-600 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center font-bold text-xs">
+                          P{idx + 1}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">{item[dayField]}</h4>
+                          <p className="text-[11px] text-slate-400">{item.period}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="bg-emerald-600 text-white font-bold text-xs px-2.5 py-1 rounded-lg">
+                          Lớp {homeroom ? homeroom.className : 'Phân công'}
+                        </span>
+                        <p className="text-[11px] text-slate-400 mt-1">Phòng học</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">{item.subject}</h4>
-                      <p className="text-[11px] text-slate-400">{item.period}</p>
+                  ));
+                }
+
+                if (new Date().getDay() === 0) {
+                  return (
+                    <div className="p-6 text-center text-slate-500 dark:text-slate-400 text-sm bg-slate-50 dark:bg-slate-800/40 rounded-xl">
+                      🎉 Chủ Nhật - Không có lịch dạy hôm nay. Chúc Thầy/Cô có ngày nghỉ cuối tuần vui vẻ!
                     </div>
+                  );
+                }
+
+                return (
+                  <div className="p-6 text-center text-slate-500 dark:text-slate-400 text-sm bg-slate-50 dark:bg-slate-800/40 rounded-xl">
+                    Chưa có tiết dạy nào được xếp vào ngày hôm nay trên TKB lớp {homeroom ? homeroom.className : ''}.
                   </div>
-                  <div className="text-right">
-                    <span className="bg-emerald-600 text-white font-bold text-xs px-2.5 py-1 rounded-lg">
-                      Lớp {item.class}
-                    </span>
-                    <p className="text-[11px] text-slate-400 mt-1">{item.room}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })()}
             </div>
           </div>
 

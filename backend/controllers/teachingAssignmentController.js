@@ -268,15 +268,15 @@ export const batchSaveTeachingAssignments = async (req, res) => {
 
         // Ghi vết kiểm toán
         if (req.user?.id) {
-            await AuditLogService.createLog({
+            await AuditLogService.log({
                 userId: req.user.id,
                 action: 'assignment:batch_update',
-                resourceType: 'schedule',
+                module: 'teaching_assignment',
+                resource: 'schedule',
                 resourceId: schoolYearId,
                 newValue: { assignmentsCount: assignments.length, academicYear, semester },
                 reason: `Cập nhật ma trận phân công giảng dạy cho ${assignments.length} vị trí môn-lớp (${semester})`,
-                ipAddress: req.ip,
-                userAgent: req.headers['user-agent'],
+                req,
                 severity: 'info'
             }).catch(e => console.warn('AuditLog error:', e.message));
         }

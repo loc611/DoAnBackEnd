@@ -96,6 +96,31 @@ export const createClass = async (req, res) => {
             }
         });
 
+        // Đồng bộ hóa sang HomeroomAssignment
+        if (homeroomTeacherId) {
+            try {
+                const currentSchoolYear = await prisma.schoolYear.findFirst({ where: { isCurrent: true } }) || await prisma.schoolYear.findFirst();
+                if (currentSchoolYear) {
+                    await prisma.homeroomAssignment.upsert({
+                        where: {
+                            classId_schoolYearId: {
+                                classId: newClass.id,
+                                schoolYearId: currentSchoolYear.id
+                            }
+                        },
+                        update: { teacherId: homeroomTeacherId },
+                        create: {
+                            classId: newClass.id,
+                            schoolYearId: currentSchoolYear.id,
+                            teacherId: homeroomTeacherId
+                        }
+                    });
+                }
+            } catch (e) {
+                console.warn('HomeroomAssignment sync warning in createClass:', e.message);
+            }
+        }
+
         res.status(201).json({ message: 'Tạo lớp học thành công', class: newClass });
     } catch (error) {
         console.error(error);
@@ -158,6 +183,37 @@ export const updateClass = async (req, res) => {
                 status: status || undefined
             }
         });
+
+        // Đồng bộ hóa sang HomeroomAssignment khi thay đổi GVCN
+        if (homeroomTeacherId !== undefined) {
+            try {
+                const currentSchoolYear = await prisma.schoolYear.findFirst({ where: { isCurrent: true } }) || await prisma.schoolYear.findFirst();
+                if (currentSchoolYear) {
+                    if (homeroomTeacherId) {
+                        await prisma.homeroomAssignment.upsert({
+                            where: {
+                                classId_schoolYearId: {
+                                    classId: updated.id,
+                                    schoolYearId: currentSchoolYear.id
+                                }
+                            },
+                            update: { teacherId: homeroomTeacherId },
+                            create: {
+                                classId: updated.id,
+                                schoolYearId: currentSchoolYear.id,
+                                teacherId: homeroomTeacherId
+                            }
+                        });
+                    } else {
+                        await prisma.homeroomAssignment.deleteMany({
+                            where: { classId: updated.id, schoolYearId: currentSchoolYear.id }
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('HomeroomAssignment sync warning in updateClass:', e.message);
+            }
+        }
 
         res.json({ message: 'Cập nhật thành công', class: updated });
     } catch (error) {

@@ -190,13 +190,21 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
 
           // GVCN: Xem toàn bộ điểm các môn của lớp chủ nhiệm
           if (roleNames.includes('homeroom_teacher') || roleNames.includes('teacher')) {
-            const homeroom = await prisma.homeroomAssignment.findFirst({
-              where: {
-                teacher: { userId: user.id },
-                classId: context.classId
-              }
-            });
-            if (homeroom) isScopeAllowed = true;
+            const [homeroom, directHomeroom] = await Promise.all([
+              prisma.homeroomAssignment.findFirst({
+                where: {
+                  teacher: { userId: user.id },
+                  classId: context.classId
+                }
+              }),
+              prisma.class.findFirst({
+                where: {
+                  id: context.classId,
+                  homeroomTeacher: { userId: user.id }
+                }
+              })
+            ]);
+            if (homeroom || directHomeroom) isScopeAllowed = true;
           }
 
           // Giáo viên bộ môn: Xem điểm lớp mình dạy
@@ -222,13 +230,21 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
       else if (resourceType === 'conduct') {
         if (action === 'write') {
           // Chỉ GVCN của lớp hoặc Giám thị mới được sửa hạnh kiểm
-          const homeroom = await prisma.homeroomAssignment.findFirst({
-            where: {
-              teacher: { userId: user.id },
-              classId: context.classId
-            }
-          });
-          if (homeroom || roleNames.includes('supervisor')) {
+          const [homeroom, directHomeroom] = await Promise.all([
+            prisma.homeroomAssignment.findFirst({
+              where: {
+                teacher: { userId: user.id },
+                classId: context.classId
+              }
+            }),
+            prisma.class.findFirst({
+              where: {
+                id: context.classId,
+                homeroomTeacher: { userId: user.id }
+              }
+            })
+          ]);
+          if (homeroom || directHomeroom || roleNames.includes('supervisor')) {
             isScopeAllowed = true;
           } else {
             denyReason = 'Chỉ Giáo viên chủ nhiệm của lớp hoặc Giám thị mới có quyền đánh giá kết quả rèn luyện';
@@ -243,14 +259,19 @@ export const checkPermission = (action, resourceType, resourceExtractor) => {
       // ------------------------------------------------------------
       else if (resourceType === 'attendance') {
         if (action === 'write') {
-          const isTeacherOfClass = await prisma.teacherAssignment.findFirst({
-            where: { teacher: { userId: user.id }, classId: context.classId }
-          });
-          const isHomeroomOfClass = await prisma.homeroomAssignment.findFirst({
-            where: { teacher: { userId: user.id }, classId: context.classId }
-          });
+          const [isTeacherOfClass, isHomeroomOfClass, directHomeroom] = await Promise.all([
+            prisma.teacherAssignment.findFirst({
+              where: { teacher: { userId: user.id }, classId: context.classId }
+            }),
+            prisma.homeroomAssignment.findFirst({
+              where: { teacher: { userId: user.id }, classId: context.classId }
+            }),
+            prisma.class.findFirst({
+              where: { id: context.classId, homeroomTeacher: { userId: user.id } }
+            })
+          ]);
 
-          if (isTeacherOfClass || isHomeroomOfClass || roleNames.includes('supervisor')) {
+          if (isTeacherOfClass || isHomeroomOfClass || directHomeroom || roleNames.includes('supervisor')) {
             isScopeAllowed = true;
           } else {
             denyReason = 'Bạn không có quyền điểm danh lớp học này';

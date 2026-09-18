@@ -132,11 +132,11 @@ export const saveLessonLog = async (req, res) => {
         try {
           await prisma.attendance.upsert({
             where: {
-              studentId_classId_date_session: {
+              studentId_classId_date_periodNumber: {
                 studentId,
                 classId,
                 date: parsedDate,
-                session
+                periodNumber: Number(periodNumber) || 1
               }
             },
             update: {
@@ -147,6 +147,7 @@ export const saveLessonLog = async (req, res) => {
               studentId,
               classId,
               date: parsedDate,
+              periodNumber: Number(periodNumber) || 1,
               session,
               status: 'unexcused',
               note: `Vắng tiết ${periodNumber} môn ${subject?.name || 'Học'}`,

@@ -211,6 +211,44 @@ export const updateSubjectGradesByClass = async (req, res) => {
                     }
                 });
             }
+
+            // Đồng bộ hóa tự động kết quả tổng kết sang bảng Grade (overallAvgScore, academicRank, titleAwarded)
+            const uniqueStudentIds = [...new Set(grades.map(g => g.studentId).filter(Boolean))];
+            for (const sId of uniqueStudentIds) {
+                const studentSubGrades = await tx.subjectGrade.findMany({
+                    where: { studentId: sId, semester }
+                });
+                const existingGrade = await tx.grade.findFirst({
+                    where: { studentId: sId, classId, semester }
+                });
+                const conduct = existingGrade?.conductScore || 'Tốt';
+                const evaluated = evaluateSemesterSummary(studentSubGrades, conduct);
+
+                await tx.grade.upsert({
+                    where: {
+                        studentId_classId_semester: {
+                            studentId: sId,
+                            classId,
+                            semester
+                        }
+                    },
+                    update: {
+                        overallAvgScore: evaluated.overallAvg,
+                        academicRank: evaluated.academicRank,
+                        titleAwarded: evaluated.titleAwarded
+                    },
+                    create: {
+                        studentId: sId,
+                        classId,
+                        semester,
+                        conductScore: conduct,
+                        overallAvgScore: evaluated.overallAvg,
+                        academicRank: evaluated.academicRank,
+                        titleAwarded: evaluated.titleAwarded,
+                        status: resolvedStatus
+                    }
+                });
+            }
         });
 
         // Ghi vết Audit Log
@@ -566,30 +604,41 @@ export const getMyGrades = async (req, res) => {
             }
         });
 
-        // Chỉ hiển thị điểm khi BGH hoặc GV đã khóa/công bố (nếu là học sinh/phụ huynh)
-        const isStudentOrParent = req.user.role === 'student' || req.user.role === 'parent';
-
+        // Trả về dữ liệu điểm các môn học kèm trạng thái
         const sanitizedGrades = subjectGrades.map(sg => {
-            const isLocked = sg.status === 'locked';
             return {
                 subjectId: sg.subjectId,
                 subjectCode: sg.subject?.subjectCode,
                 subjectName: sg.subject?.name,
                 teacherName: sg.teacher?.fullName || 'Chưa phân công',
                 assessmentType: sg.assessmentType,
-                // Nếu học sinh xem điểm nháp, thông báo rõ ràng
-                tx1: isStudentOrParent && !isLocked ? null : sg.tx1,
-                tx2: isStudentOrParent && !isLocked ? null : sg.tx2,
-                tx3: isStudentOrParent && !isLocked ? null : sg.tx3,
-                tx4: isStudentOrParent && !isLocked ? null : sg.tx4,
-                gk: isStudentOrParent && !isLocked ? null : sg.gk,
-                ck: isStudentOrParent && !isLocked ? null : sg.ck,
-                avgScore: isStudentOrParent && !isLocked ? null : sg.avgScore,
-                feedbackResult: isStudentOrParent && !isLocked ? null : sg.feedbackResult,
+                tx1: sg.tx1,
+                tx2: sg.tx2,
+                tx3: sg.tx3,
+                tx4: sg.tx4,
+                gk: sg.gk,
+                ck: sg.ck,
+                avgScore: sg.avgScore,
+                feedbackResult: sg.feedbackResult,
                 teacherRemark: sg.teacherRemark || '',
                 status: sg.status
             };
         });
+
+        // Nếu điểm tổng kết chưa có trong Grade, tự động tính toán từ subjectGrades
+        let finalOverallAvg = gradeSummary?.overallAvgScore ?? null;
+        let finalRank = gradeSummary?.academicRank || 'Chưa xếp loại';
+        let finalTitle = gradeSummary?.titleAwarded || null;
+        const conduct = gradeSummary?.conductScore || 'Tốt';
+
+        if (finalOverallAvg === null && subjectGrades.length > 0) {
+            const evaluated = evaluateSemesterSummary(subjectGrades, conduct);
+            finalOverallAvg = evaluated.overallAvg;
+            finalRank = evaluated.academicRank;
+            finalTitle = evaluated.titleAwarded;
+        }
+
+        const isPublished = gradeSummary?.status === 'locked' || (subjectGrades.length > 0 && subjectGrades.every(sg => sg.status === 'locked'));
 
         return res.json({
             success: true,
@@ -601,12 +650,12 @@ export const getMyGrades = async (req, res) => {
                 homeroomTeacher: student.class?.homeroomTeacher?.fullName || 'Chưa phân công'
             },
             semester,
-            isPublished: gradeSummary?.status === 'locked',
+            isPublished,
             summary: {
-                overallAvgScore: gradeSummary?.overallAvgScore ?? null,
-                conductScore: gradeSummary?.conductScore || 'Chưa đánh giá',
-                academicRank: gradeSummary?.academicRank || 'Chưa xếp loại',
-                titleAwarded: gradeSummary?.titleAwarded || null,
+                overallAvgScore: finalOverallAvg,
+                conductScore: conduct,
+                academicRank: finalRank,
+                titleAwarded: finalTitle,
                 teacherRemark: gradeSummary?.teacherRemark || ''
             },
             subjectGrades: sanitizedGrades

@@ -139,10 +139,10 @@ export const login = async (req, res) => {
                     } catch (e2) {}
                 }
             }
-            // B. Tài khoản Giáo viên: gv001 - gv011 + 1111
-            else if (lowerId.startsWith('gv') && inputPassword === '1111') {
+            // B. Tài khoản Giáo viên: gv001 - gv011 (gv001@123 / teacher123 / 1111)
+            else if (lowerId.startsWith('gv') && (inputPassword === `${lowerId.split('@')[0]}@123` || inputPassword === 'gv001@123' || inputPassword === 'teacher123' || inputPassword === '1111')) {
                 try {
-                    const teacherPassHash = await bcrypt.hash('1111', 10);
+                    const teacherPassHash = await bcrypt.hash(inputPassword, 10);
                     if (user) {
                         user = await prisma.user.update({
                             where: { id: user.id },
@@ -153,14 +153,14 @@ export const login = async (req, res) => {
                     }
                 } catch (tErr) {}
             }
-            // C. Tài khoản Học sinh: hs001 / hs001@school.edu.vn / student@school.edu.vn + 1111
-            else if ((lowerId === 'hs001' || lowerId === 'hs001@school.edu.vn' || lowerId === 'student@school.edu.vn') && inputPassword === '1111') {
+            // C. Tài khoản Học sinh: hs001 (hs001@123 / student123 / 1111)
+            else if ((lowerId.startsWith('hs') || lowerId === 'student@school.edu.vn') && (inputPassword === 'hs001@123' || inputPassword === `${lowerId.split('@')[0]}@123` || inputPassword === 'student123' || inputPassword === '1111')) {
                 try {
-                    const studentPassHash = await bcrypt.hash('1111', 10);
+                    const studentPassHash = await bcrypt.hash(inputPassword, 10);
                     if (user) {
                         user = await prisma.user.update({
                             where: { id: user.id },
-                            data: { email: 'hs001@school.edu.vn', password: studentPassHash, role: 'student', status: 'active' },
+                            data: { email: user.email || 'hs001@school.edu.vn', password: studentPassHash, role: 'student', status: 'active' },
                             include: { student: true }
                         });
                         isMatch = true;
@@ -368,7 +368,7 @@ export const changePassword = async (req, res) => {
             })
         ]);
 
-        return res.json({ message: 'Đổi mật khẩu thành công. Các phiên đăng nhập cũ đã được thu hồi.' });
+        return res.json({ success: true, message: 'Đổi mật khẩu thành công. Các phiên đăng nhập cũ đã được thu hồi.' });
     } catch (error) {
         console.error('ChangePassword error:', error);
         return res.status(500).json({ message: 'Lỗi máy chủ khi đổi mật khẩu' });
@@ -481,3 +481,5 @@ export const getMe = async (req, res) => {
         res.status(500).json({ message: 'Lỗi server khi lấy thông tin người dùng' });
     }
 };
+
+

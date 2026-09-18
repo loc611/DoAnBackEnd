@@ -68,11 +68,14 @@ export const getStudentDashboard = async (req, res) => {
         });
 
         const gpaTrend = grades.map(g => {
-            const scores = [g.math, g.literature, g.english, g.physics, g.chemistry, g.it].filter(s => s > 0);
-            const gpa = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '0.0';
+            let gpaVal = g.overallAvgScore;
+            if (gpaVal === null || gpaVal === undefined || isNaN(gpaVal)) {
+                const scores = [g.math, g.literature, g.english, g.physics, g.chemistry, g.it].filter(s => s > 0);
+                gpaVal = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+            }
             return {
                 semester: g.semester,
-                gpa: parseFloat(gpa),
+                gpa: parseFloat(Number(gpaVal).toFixed(1)),
                 status: g.status
             };
         });
@@ -89,12 +92,15 @@ export const getStudentDashboard = async (req, res) => {
             orderBy: { createdAt: 'desc' }
         });
 
-        // 6. Số đơn đang chờ duyệt (nghỉ phép, phúc khảo)
+        // 6. Số đơn đang chờ duyệt (nghỉ phép, phúc khảo, đơn từ số hóa)
         const pendingAbsences = await prisma.absenceRequest.count({
             where: { studentId, status: 'PENDING' }
         });
         const pendingReviews = await prisma.gradeReviewRequest.count({
             where: { studentId, status: 'PENDING' }
+        });
+        const pendingPetitions = await prisma.studentPetition.count({
+            where: { studentId, status: { in: ['SUBMITTED', 'UNDER_REVIEW'] } }
         });
 
         res.json({
@@ -136,7 +142,9 @@ export const getStudentDashboard = async (req, res) => {
                 notifications,
                 pendingRequests: {
                     absences: pendingAbsences,
-                    reviews: pendingReviews
+                    reviews: pendingReviews,
+                    petitions: pendingPetitions,
+                    total: pendingAbsences + pendingReviews + pendingPetitions
                 }
             }
         });
@@ -736,11 +744,14 @@ export const getStudentExams = async (req, res) => {
     try {
         const classId = req.classId;
         const gradeLevel = req.student.class?.grade || 10;
-        const semester = req.query.semester || 'HK1_2026';
+        const reqSemester = req.query.semester || 'HK1_2026';
+        const semesterFilter = (reqSemester === 'HK1_2026' || reqSemester === 'HK1') 
+            ? { in: ['HK1', 'HK1_2026'] } 
+            : reqSemester;
 
         const exams = await prisma.examSchedule.findMany({
             where: {
-                semester,
+                semester: semesterFilter,
                 OR: [
                     { classId },
                     { grade: gradeLevel }
