@@ -34,6 +34,12 @@ model User {
   reviewedReviews   GradeReviewRequest[] @relation("ReviewedByAdminOrTeacher")
   reviewedAbsences  AbsenceRequest[]     @relation("ReviewedAbsence")
   
+  // Grade Change Workflow Relations (Two-Man Rule)
+  requestedGradeChanges         GradeChangeRequest[] @relation("RequestedGradeChanges")
+  homeroomConfirmedGradeChanges GradeChangeRequest[] @relation("HomeroomConfirmedGradeChanges")
+  approvedGradeChanges          GradeChangeRequest[] @relation("ApprovedGradeChanges")
+  rejectedGradeChanges          GradeChangeRequest[] @relation("RejectedGradeChanges")
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -144,22 +150,75 @@ model GradingWindow {
 // ==========================================
 // 3️⃣ PHÂN CÔNG GIẢNG DẠY & CHỦ NHIỆM (SCOPE ASSIGNMENTS)
 // ==========================================
+model Department {
+  id              String     @id @default(uuid())
+  code            String     @unique // e.g. "TOAN_TIN", "KHTN", "NGU_VAN"
+  name            String     // e.g. "Tổ Toán - Tin học", "Tổ Ngữ Văn"
+  description     String?
+  
+  headTeacherId   String?    @unique
+  headTeacher     Teacher?   @relation("DepartmentHead", fields: [headTeacherId], references: [id], onDelete: SetNull)
+  
+  deputyTeacherId String?    @unique
+  deputyTeacher   Teacher?   @relation("DepartmentDeputy", fields: [deputyTeacherId], references: [id], onDelete: SetNull)
+
+  teachers        Teacher[]  @relation("DepartmentMembers")
+  subjects        Subject[]
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([code])
+}
+
 model Teacher {
-  id             String    @id @default(uuid())
-  userId         String    @unique
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  teacherCode    String    @unique
-  fullName       String
-  phone          String?
-  specialization String?
-  position       String?   @default("Giáo viên bộ môn")
+  id                 String    @id @default(uuid())
+  userId             String    @unique
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teacherCode        String    @unique
+  fullName           String
+  gender             String?   @default("Khác")
+  dateOfBirth        DateTime?
+  phone              String?
+  nationalIdCard     String?   // CCCD 12 số
+  address            String?   // Địa chỉ thường trú
+
+  // Tổ chuyên môn
+  departmentId       String?
+  department         Department? @relation("DepartmentMembers", fields: [departmentId], references: [id], onDelete: SetNull)
+  headedDepartment   Department? @relation("DepartmentHead")
+  deputyDepartment   Department? @relation("DepartmentDeputy")
+
+  // Trình độ học vị & Chuyên môn
+  specialization     String?   // Bộ môn đào tạo chính
+  academicDegree     String?   @default("Cử nhân") // 'Cử nhân', 'Thạc sĩ', 'Tiến sĩ'
+  position           String?   @default("Giáo viên bộ môn")
+  joiningDate        DateTime? @default(now()) // Ngày vào trường
+
+  // Thông tin ngân hàng chuyển khoản lương
+  bankAccountNumber  String?
+  bankName           String?   // Tên ngân hàng (VietinBank, Vietcombank, BIDV,...)
+  bankBranch         String?
+
+  // Định mức tiết giảng & Kiêm nhiệm
+  baseQuotas         Int       @default(17) // 17 tiết chuẩn THPT
+  quotaReduction     Int       @default(0)  // Số tiết giảm do kiêm nhiệm (GVCN: 4, Tổ trưởng: 3,...)
+  reductionReason    String?
 
   // Trạng thái công tác & hợp đồng (ABAC Policy Support)
-  teacherType        String?   @default("permanent") // 'permanent' (cơ hữu), 'guest' (thỉnh giảng)
+  teacherType        String?   @default("permanent") // 'permanent' (cơ hữu/biên chế), 'contract_111' (HĐ 111), 'visiting' (thỉnh giảng)
+  workStatus         String    @default("working")   // 'working', 'maternity_leave', 'suspended', 'retired'
   contractExpiresAt  DateTime?
   leaveStatus        String?   @default("active")    // 'active', 'long_term_leave'
   leaveStartDate     DateTime?
   leaveEndDate       DateTime?
+
+  // Quan hệ mở rộng hồ sơ nhân sự
+  contracts          TeacherContract[]
+  evaluations        TeacherEvaluation[]
+  documents          TeacherDocument[]
+  substituteClasses  TeacherSubstitute[] @relation("SubstituteTeacher")
+  originalClasses    TeacherSubstitute[] @relation("OriginalTeacher")
 
   // Quan hệ 2-tier Scope Assignments
   teacherAssignments  TeacherAssignment[]
@@ -175,6 +234,80 @@ model Teacher {
   updatedAt DateTime @updatedAt
 
   @@index([teacherCode])
+  @@index([departmentId])
+  @@index([workStatus])
+}
+
+model TeacherContract {
+  id             String    @id @default(uuid())
+  teacherId      String
+  teacher        Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  contractNumber String    @unique
+  contractType   String    // 'BIEN_CHE', 'HD_111', 'THINH_GIANG'
+  salaryScale    Float     @default(2.34)
+  startDate      DateTime
+  endDate        DateTime?
+  status         String    @default("ACTIVE") // 'ACTIVE', 'EXPIRED', 'TERMINATED'
+  signedDate     DateTime?
+  documentUrl    String?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([teacherId])
+}
+
+model TeacherEvaluation {
+  id             String    @id @default(uuid())
+  teacherId      String
+  teacher        Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  academicYear   String    // e.g. "2025-2026"
+  ratingLevel    String    // 'XUAT_SAC', 'TOT', 'DAT', 'CHUA_DAT'
+  criteriaScores Json?
+  initiatives    String?
+  initiativeTier String?
+  commendations  String?
+  evaluatedById  String?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([teacherId, academicYear])
+  @@index([teacherId])
+}
+
+model TeacherDocument {
+  id            String    @id @default(uuid())
+  teacherId     String
+  teacher       Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  documentType  String    // 'RESUME_2C', 'DEGREE_BACHELOR', 'DEGREE_MASTER', 'CONTRACT', 'CERTIFICATE', 'OTHER'
+  title         String
+  fileUrl       String
+  fileSizeBytes Int?
+  isVerified    Boolean   @default(false)
+  verifiedById  String?
+  uploadedAt    DateTime  @default(now())
+
+  @@index([teacherId])
+}
+
+model TeacherSubstitute {
+  id                  String    @id @default(uuid())
+  originalTeacherId   String
+  originalTeacher     Teacher   @relation("OriginalTeacher", fields: [originalTeacherId], references: [id], onDelete: Cascade)
+  substituteTeacherId String
+  substituteTeacher   Teacher   @relation("SubstituteTeacher", fields: [substituteTeacherId], references: [id], onDelete: Cascade)
+  classId             String
+  class               Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  date                DateTime
+  periodNumber        Int
+  reason              String
+  status              String    @default("APPROVED")
+
+  createdAt           DateTime  @default(now())
+
+  @@index([originalTeacherId])
+  @@index([substituteTeacherId])
 }
 
 model Class {
@@ -199,6 +332,8 @@ model Class {
   notifications         Notification[]
   lessonLogs            LessonLog[]
   assignedRegistrations SubjectGroupRegistration[]
+  gradeChangeRequests   GradeChangeRequest[]
+  substituteClasses     TeacherSubstitute[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -215,29 +350,37 @@ model Subject {
   teacherId      String?
   teacher        Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
 
+  departmentId   String?
+  department     Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
   teacherAssignments  TeacherAssignment[]
   subjectGrades       SubjectGrade[]
   lessonLogs          LessonLog[]
   subjectEnrollments  SubjectEnrollment[]
   gradeDetails        SubjectGradeDetail[]
   attendances         Attendance[]
+  gradeChangeRequests GradeChangeRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([departmentId])
 }
 
 // Giáo viên bộ môn dạy môn nào ở lớp nào trong năm học nào
 model TeacherAssignment {
-  id           String     @id @default(uuid())
-  teacherId    String
-  teacher      Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  classId      String
-  class        Class      @relation(fields: [classId], references: [id], onDelete: Cascade)
-  subjectId    String
-  subject      Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  schoolYearId String
-  schoolYear   SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade)
-  semester     String     @default("All") // 'HK1', 'HK2', 'All'
+  id             String     @id @default(uuid())
+  teacherId      String
+  teacher        Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  classId        String
+  class          Class      @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId      String
+  subject        Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  schoolYearId   String
+  schoolYear     SchoolYear @relation(fields: [schoolYearId], references: [id], onDelete: Cascade)
+  semester       String     @default("All") // 'HK1', 'HK2', 'All'
+  periodsPerWeek Int        @default(2)
+  note           String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -298,6 +441,13 @@ model Student {
   status      String?   @default("active")
   enrolledAt  DateTime? @db.Timestamptz
   
+  // Thông tin nhân khẩu học bổ sung
+  cccdNumber       String?   @unique
+  ethnicity        String?   @default("Kinh")
+  religion         String?   @default("Không")
+  birthPlace       String?
+  permanentAddress String?
+  
   classId     String?
   class       Class?    @relation(fields: [classId], references: [id], onDelete: SetNull)
 
@@ -311,6 +461,10 @@ model Student {
   alerts          AcademicAlert[]
   petitions       StudentPetition[]
 
+  // Hồ sơ Y tế & Tài liệu số hóa
+  healthRecord    StudentHealthRecord?
+  documents       StudentDocument[]
+
   // Student Portal & Transfer Relations
   subjectEnrollments       SubjectEnrollment[]
   transferRecords          TransferRecord[]
@@ -320,6 +474,9 @@ model Student {
   gradeReviewRequests      GradeReviewRequest[]
   absenceRequests          AbsenceRequest[]
   subjectGroupRegistration SubjectGroupRegistration?
+  gradeChangeRequests      GradeChangeRequest[]
+
+  version                  Int       @default(1)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -327,6 +484,7 @@ model Student {
   @@index([studentCode])
   @@index([classId])
   @@index([status])
+  @@index([cccdNumber])
 }
 
 model GuardianLink {
@@ -947,6 +1105,8 @@ model GradeReviewRequest {
 
 enum AbsenceStatus {
   PENDING
+  PENDING_HOMEROOM
+  PENDING_ADMIN
   APPROVED
   REJECTED
 }
@@ -972,3 +1132,137 @@ model AbsenceRequest {
   @@index([studentId])
   @@index([status])
 }
+
+// ==========================================
+// 1️⃣1️⃣.1 QUY TRÌNH SỬA ĐIỂM SAU KHÓA SỔ (TWO-MAN RULE)
+// ==========================================
+enum GradeChangeStatus {
+  PENDING_HOMEROOM
+  PENDING_ADMIN
+  APPROVED
+  REJECTED
+}
+
+model GradeChangeRequest {
+  id                    String            @id @default(uuid())
+  studentId             String
+  subjectId             String
+  classId               String
+  semester              String            @default("HK1_2026")
+  columnKey             String            // "tx1", "tx2", "tx3", "tx4", "gk", "ck"
+  oldScore              Float?
+  newScore              Float
+  reason                String
+  proofUrl              String?
+  status                GradeChangeStatus @default(PENDING_HOMEROOM)
+  
+  requestedById         String
+  homeroomConfirmedById String?
+  homeroomNote          String?
+  homeroomConfirmedAt   DateTime?
+  
+  approvedById          String?
+  adminNote             String?
+  approvedAt            DateTime?
+
+  rejectedById          String?
+  rejectionReason       String?
+  rejectedAt            DateTime?
+
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  student               Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subject               Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  class                 Class             @relation(fields: [classId], references: [id], onDelete: Cascade)
+  requestedBy           User              @relation("RequestedGradeChanges", fields: [requestedById], references: [id])
+  homeroomConfirmedBy   User?             @relation("HomeroomConfirmedGradeChanges", fields: [homeroomConfirmedById], references: [id])
+  approvedBy            User?             @relation("ApprovedGradeChanges", fields: [approvedById], references: [id])
+  rejectedBy            User?             @relation("RejectedGradeChanges", fields: [rejectedById], references: [id])
+
+  @@index([studentId])
+  @@index([classId, subjectId])
+  @@index([status])
+  @@index([requestedById])
+}
+
+// ==========================================
+// 1️⃣2️⃣ TRANSACTIONAL OUTBOX & IDEMPOTENCY
+// ==========================================
+model OutboxEvent {
+  id            String    @id @default(uuid())
+  aggregateType String    // e.g. "STUDENT"
+  aggregateId   String    // ID of student
+  eventType     String    // "STUDENT_CREATED", "STUDENT_UPDATED", "STUDENT_DELETED"
+  payload       Json      // Snapshot of document to sync
+  version       Int       // Aggregate version for external versioning
+  status        String    @default("PENDING") // "PENDING", "PUBLISHED", "FAILED"
+  retryCount    Int       @default(0)
+  lastError     String?
+  createdAt     DateTime  @default(now())
+  processedAt   DateTime?
+
+  @@index([status, createdAt])
+  @@index([aggregateType, aggregateId])
+}
+
+model ProcessedEvent {
+  eventId     String   @id
+  processedAt DateTime @default(now())
+}
+
+// ==========================================
+// 1️⃣3️⃣ HỒ SƠ Y TẾ & SỨC KHỎE HỌC ĐƯỜNG
+// ==========================================
+model StudentHealthRecord {
+  id                     String    @id @default(uuid())
+  studentId              String    @unique
+  student                Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  bloodGroup             String?   // 'A', 'B', 'AB', 'O', 'Rh+', 'Rh-'
+  heightCm               Float?    // Chiều cao (cm)
+  weightKg               Float?    // Cân nặng (kg)
+  bmi                    Float?    // Tự động tính
+  bmiClassification      String?   // 'Bình thường', 'Thiếu cân', 'Thừa cân', 'Béo phì'
+
+  visionLeft             String?   @default("10/10")
+  visionRight            String?   @default("10/10")
+  refractiveError        String?   // 'Không', 'Cận thị', 'Loạn thị', 'Viễn thị'
+
+  chronicDiseases        String?   // Bệnh lý nền
+  allergies              String?   // Dị ứng
+  healthInsuranceNumber  String?   // Số thẻ BHYT
+  healthInsuranceExpires DateTime? // Hạn BHYT
+  notes                  String?
+
+  updatedAt              DateTime  @updatedAt
+  createdAt              DateTime  @default(now())
+
+  @@index([studentId])
+}
+
+// ==========================================
+// 1️⃣4️⃣ HỒ SƠ TÀI LIỆU SỐ HÓA
+// ==========================================
+model StudentDocument {
+  id             String    @id @default(uuid())
+  studentId      String
+  student        Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  documentType   String    // 'BIRTH_CERTIFICATE', 'CCCD_FRONT', 'CCCD_BACK', 'TRANSCRIPT_THCS', 'HEALTH_CERT', 'POLICY_PROOF', 'OTHER'
+  title          String
+  fileUrl        String
+  fileType       String?
+  fileSizeBytes  Int?
+
+  isVerified     Boolean   @default(false)
+  verifiedById   String?
+  verifiedAt     DateTime?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([studentId])
+  @@index([documentType])
+}
+

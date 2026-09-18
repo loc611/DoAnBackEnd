@@ -214,3 +214,78 @@ export const getSyllabusProgress = async (req, res) => {
     res.status(500).json({ success: false, message: 'Lỗi khi thống kê tiến độ chương trình' });
   }
 };
+
+/**
+ * Giám sát mức độ tuân thủ ký sổ đầu bài trong ngày (Admin / BGH & GVCN)
+ * @route GET /api/lesson-logs/compliance?date=...&classId=...
+ */
+export const getDailyCompliance = async (req, res) => {
+  try {
+    const { date, classId } = req.query;
+    const targetDate = date ? new Date(date) : new Date();
+    targetDate.setHours(0, 0, 0, 0);
+
+    const classWhere = { status: 'active' };
+    if (classId) classWhere.id = classId;
+
+    const classes = await prisma.class.findMany({
+      where: classWhere,
+      include: {
+        homeroomTeacher: { select: { fullName: true, phone: true } }
+      },
+      orderBy: { className: 'asc' }
+    });
+
+    const logs = await prisma.lessonLog.findMany({
+      where: {
+        date: targetDate,
+        ...(classId ? { classId } : {})
+      },
+      include: {
+        subject: { select: { name: true } },
+        teacher: { select: { fullName: true, teacherCode: true } }
+      }
+    });
+
+    const report = classes.map(cls => {
+      const classLogs = logs.filter(l => l.classId === cls.id);
+      const signedLogs = classLogs.filter(l => l.isSigned);
+      const periodsCount = 5; // Chuẩn 5 tiết buổi sáng phổ thông
+      const missingCount = Math.max(0, periodsCount - signedLogs.length);
+
+      return {
+        classId: cls.id,
+        className: cls.className,
+        homeroomTeacher: cls.homeroomTeacher?.fullName || 'Chưa gán',
+        totalPeriodsExpected: periodsCount,
+        signedPeriodsCount: signedLogs.length,
+        missingCount,
+        isFullyCompliant: missingCount === 0,
+        signedPeriods: classLogs.map(l => ({
+          periodNumber: l.periodNumber,
+          subjectName: l.subject?.name,
+          teacherName: l.teacher?.fullName,
+          isSigned: l.isSigned,
+          lessonTitle: l.lessonTitle
+        }))
+      };
+    });
+
+    const totalExpected = report.reduce((sum, r) => sum + r.totalPeriodsExpected, 0);
+    const totalSigned = report.reduce((sum, r) => sum + r.signedPeriodsCount, 0);
+    const overallComplianceRate = totalExpected > 0 ? Math.round((totalSigned / totalExpected) * 100) : 100;
+
+    res.json({
+      success: true,
+      date: targetDate.toISOString().split('T')[0],
+      overallComplianceRate: `${overallComplianceRate}%`,
+      totalClasses: classes.length,
+      compliantClassesCount: report.filter(r => r.isFullyCompliant).length,
+      data: report
+    });
+  } catch (error) {
+    console.error('Error in getDailyCompliance:', error);
+    res.status(500).json({ success: false, message: 'Lỗi khi kiểm tra mức độ tuân thủ sổ đầu bài: ' + error.message });
+  }
+};
+

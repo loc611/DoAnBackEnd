@@ -33,7 +33,10 @@ import {
   Clock,
   Layers,
   FileText,
-  FileQuestion
+  FileQuestion,
+  ScrollText,
+  Sliders,
+  CalendarClock
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useTeacherContext } from '../context/TeacherContext';
@@ -86,9 +89,19 @@ const DashboardLayout = () => {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   
-  const userRole = localStorage.getItem('userRole') || 'student';
   const userDataStr = localStorage.getItem('userData');
   const [userData, setUserData] = useState(() => userDataStr ? JSON.parse(userDataStr) : null);
+  const [userRole, setUserRole] = useState(() => {
+    const savedRole = localStorage.getItem('userRole');
+    if (savedRole) return savedRole.toLowerCase();
+    if (userDataStr) {
+      try {
+        const parsed = JSON.parse(userDataStr);
+        if (parsed.role) return parsed.role.toLowerCase();
+      } catch (e) {}
+    }
+    return 'student';
+  });
   
   // Hook Teacher Context cho phân hệ Giáo viên
   const teacherContext = useTeacherContext();
@@ -104,8 +117,14 @@ const DashboardLayout = () => {
     api.get('/auth/me')
       .then(res => {
         if (res.data?.user) {
-          setUserData(res.data.user);
-          localStorage.setItem('userData', JSON.stringify(res.data.user));
+          const freshUser = res.data.user;
+          setUserData(freshUser);
+          localStorage.setItem('userData', JSON.stringify(freshUser));
+          if (freshUser.role) {
+            const normalizedRole = freshUser.role.toLowerCase();
+            setUserRole(normalizedRole);
+            localStorage.setItem('userRole', normalizedRole);
+          }
         }
       })
       .catch(() => {});
@@ -263,29 +282,40 @@ const DashboardLayout = () => {
       {
         title: 'TỔNG QUAN',
         items: [
-          { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+          { icon: LayoutDashboard, label: 'Dashboard Điều Hành', path: '/' },
         ]
       },
       {
-        title: 'QUẢN LÝ ĐÀO TẠO',
+        title: 'QUẢN LÝ ĐÀO TẠO & HỌC VỤ',
         items: [
           { icon: Users, label: 'Quản lý học sinh', path: '/students' },
           { icon: GraduationCap, label: 'Quản lý giáo viên', path: '/teachers' },
           { icon: LayoutList, label: 'Quản lý lớp học', path: '/classes' },
           { icon: BookOpen, label: 'Quản lý môn học', path: '/subjects' },
-          { icon: Calendar, label: 'Thời khóa biểu', path: '/schedule' },
+          { icon: Calendar, label: 'Thời khóa biểu (TKB)', path: '/schedule' },
           { icon: CalendarDays, label: 'Lịch thi học kỳ', path: '/exams' },
-          { icon: UserCheck, label: 'Điểm danh chuyên cần', path: '/attendance' },
-          { icon: BookOpenCheck, label: 'Sổ điểm học sinh', path: '/grades' },
+          { icon: BookOpenCheck, label: 'Sổ điểm điện tử TT22', path: '/grades' },
           { icon: FileText, label: 'Sổ đầu bài điện tử', path: '/lesson-logs' },
-          { icon: FileQuestion, label: 'Cổng đơn từ & phúc khảo', path: '/petitions' },
         ]
       },
       {
-        title: 'TÀI CHÍNH & QUẢN TRỊ',
+        title: 'NGHIỆP VỤ HỌC ĐƯỜNG',
+        items: [
+          { icon: UserCheck, label: 'Điểm danh & Chuyên cần', path: '/attendance' },
+          { icon: FileQuestion, label: 'Cổng đơn từ & Phúc khảo', path: '/petitions', badge: 'Chờ duyệt' },
+        ]
+      },
+      {
+        title: 'TÀI CHÍNH & THỐNG KÊ',
         items: [
           { icon: CreditCard, label: 'Quản lý học phí', path: '/tuition' },
-          { icon: Shield, label: 'Quản trị tài khoản', path: '/users' },
+        ]
+      },
+      {
+        title: 'HỆ THỐNG & BẢO MẬT',
+        items: [
+          { icon: Shield, label: 'Quản trị tài khoản (RBAC)', path: '/users' },
+          { icon: ScrollText, label: 'Nhật ký hệ thống (Audit Logs)', path: '/audit-logs' },
           { icon: BellRing, label: 'Trung tâm thông báo', path: '/notifications' },
           { icon: Settings, label: 'Cài đặt hệ thống', path: '/settings' },
         ]

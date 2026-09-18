@@ -123,6 +123,11 @@ export const protect = async (req, res, next) => {
             return res.status(403).json({ success: false, message: 'Tài khoản của bạn đang bị đình chỉ hoạt động' });
         }
 
+        // Đảm bảo nếu user có profile admin hoặc tài khoản admin thì luôn có role 'admin'
+        if (user.admin || user.username === 'admin' || user.email === 'admin@school.edu.vn') {
+            user.role = 'admin';
+        }
+
         // Kiểm tra Chế độ Bảo trì (Maintenance Mode)
         const inMaintenance = await isMaintenanceActive();
         const isAdmin = user.role === 'admin' || user.role === 'principal' || user.role === 'it_admin';
@@ -163,7 +168,7 @@ export const authorize = (...roles) => {
         const normalizedRoles = roles.map(r => r.toLowerCase());
 
         // Admin luôn có quyền truy cập các route cơ bản
-        if (userRole === 'admin' || userRole === 'principal') {
+        if (userRole === 'admin' || userRole === 'principal' || req.user.admin || req.user.username === 'admin' || req.user.email === 'admin@school.edu.vn') {
             return next();
         }
 

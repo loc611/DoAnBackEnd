@@ -4,7 +4,8 @@ import {
   Search, Plus, Edit, Trash2, X, Eye, 
   FileSpreadsheet, Download, Upload, Settings, 
   Copy, Check, ExternalLink, RefreshCw, HelpCircle, CheckCircle2, AlertCircle,
-  Lock, Calendar, Users, PhoneCall, GraduationCap
+  Lock, Calendar, Users, PhoneCall, GraduationCap,
+  Key, ArrowUpDown, ChevronLeft, ChevronRight, CheckSquare, Square, UserX, UserCheck2, Sparkles, Filter
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
@@ -636,18 +637,346 @@ const GoogleSheetsModal = ({ isOpen, onClose, webhookUrl, setWebhookUrl, onSync,
   );
 };
 
+// Modal cấp lại / reset mật khẩu 1 lần (One-Time Password)
+const ResetPasswordModal = ({ isOpen, onClose, resetData }) => {
+  const [copied, setCopied] = useState(false);
+  if (!isOpen || !resetData) return null;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(resetData.temporaryPassword);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100"
+      >
+        <div className="p-6 bg-gradient-to-r from-amber-500 to-orange-600 text-white flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-white/20 rounded-2xl">
+              <Key size={22} className="text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-lg">Cấp lại Mật khẩu</h3>
+              <p className="text-xs text-orange-100">Bảo mật tài khoản một lần duy nhất</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4 text-sm text-gray-700">
+          <div className="bg-gray-50 p-4 rounded-2xl space-y-2 border border-gray-100">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Học sinh:</span>
+              <span className="font-bold text-gray-900">{resetData.fullName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Mã HS:</span>
+              <span className="font-mono font-semibold text-blue-600">{resetData.studentCode}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Email:</span>
+              <span className="font-mono text-gray-700 text-xs">{resetData.email}</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">
+              Mật khẩu tạm thời mới (One-Time Display)
+            </label>
+            <div className="flex items-center gap-2">
+              <input 
+                type="text" 
+                readOnly 
+                value={resetData.temporaryPassword} 
+                className="w-full font-mono text-lg font-bold bg-amber-50/70 border border-amber-200 text-amber-900 rounded-xl px-4 py-2.5 outline-none text-center select-all"
+              />
+              <button 
+                onClick={handleCopy}
+                className={`p-2.5 rounded-xl font-medium transition-all flex items-center justify-center gap-1.5 shrink-0 ${
+                  copied 
+                    ? 'bg-emerald-600 text-white' 
+                    : 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm'
+                }`}
+                title="Sao chép mật khẩu"
+              >
+                {copied ? <Check size={18} /> : <Copy size={18} />}
+                <span className="text-xs">{copied ? 'Đã chép' : 'Copy'}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="p-3.5 bg-amber-50 border border-amber-200/80 rounded-2xl text-xs text-amber-800 flex gap-2.5 items-start">
+            <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+            <p className="leading-relaxed">
+              <strong>Lưu ý bảo mật:</strong> Mật khẩu này chỉ xuất hiện <strong>01 lần duy nhất</strong> trên màn hình này. Hãy sao chép và gửi trực tiếp cho học sinh/phụ huynh.
+            </p>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+          <button 
+            onClick={onClose}
+            className="px-5 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium transition-colors"
+          >
+            Đã lưu & Đóng
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// Modal Chuyển Lớp Hàng Loạt
+const BulkChangeClassModal = ({ isOpen, onClose, selectedCount, classesList, onConfirm }) => {
+  const [targetClassId, setTargetClassId] = useState('');
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100"
+      >
+        <div className="p-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex justify-between items-center">
+          <h3 className="font-bold text-lg">Chuyển Lớp Hàng Loạt</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="p-6 space-y-4 text-sm text-gray-700">
+          <p className="text-sm text-gray-600">
+            Bạn đang chọn <strong>{selectedCount}</strong> học sinh để chuyển sang lớp mới.
+          </p>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase">Chọn lớp đích:</label>
+            <select
+              value={targetClassId}
+              onChange={(e) => setTargetClassId(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 outline-none text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">-- Chọn lớp học --</option>
+              {classesList.map(c => (
+                <option key={c.id} value={c.id}>{c.className} (Khối {c.grade})</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-200 text-sm font-medium">Hủy</button>
+          <button 
+            disabled={!targetClassId}
+            onClick={() => onConfirm(targetClassId)}
+            className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+          >
+            Xác nhận chuyển
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// Modal Wizard Chuyển năm học & Xếp lớp tự động
+const RolloverWizardModal = ({ isOpen, onClose, onSuccess }) => {
+  const [step, setStep] = useState(1);
+  const [fromYear, setFromYear] = useState('2025-2026');
+  const [toYear, setToYear] = useState('2026-2027');
+  const [simulation, setSimulation] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleSimulate = async () => {
+    try {
+      setLoading(true);
+      const res = await api.post('/students/rollover/simulate', { fromYear, toYear });
+      setSimulation(res.data.data);
+      setStep(2);
+    } catch (err) {
+      Swal.fire('Lỗi', err.response?.data?.message || 'Lỗi khi mô phỏng chuyển năm học', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExecute = async () => {
+    try {
+      setLoading(true);
+      const res = await api.post('/students/rollover/execute', { toYear });
+      Swal.fire('Thành công', res.data.message, 'success');
+      onSuccess();
+      onClose();
+    } catch (err) {
+      Swal.fire('Lỗi', err.response?.data?.message || 'Lỗi khi thực thi chuyển năm học', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[90vh]"
+      >
+        <div className="p-6 bg-gradient-to-r from-purple-700 to-indigo-800 text-white flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-white/10 rounded-2xl">
+              <Sparkles size={22} className="text-purple-200" />
+            </div>
+            <div>
+              <h3 className="font-bold text-lg">Chuyển Năm Học & Xếp Lớp Tự Động</h3>
+              <p className="text-xs text-purple-200">Quy trình 3 bước chuẩn ERP THPT TTLN</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="flex border-b border-gray-100 bg-gray-50 px-6 py-3 justify-between text-xs font-semibold text-gray-500">
+          <span className={step >= 1 ? 'text-purple-700 font-bold' : ''}>1. Chọn Niên khóa</span>
+          <span>→</span>
+          <span className={step >= 2 ? 'text-purple-700 font-bold' : ''}>2. Mô phỏng & Quét điều kiện</span>
+          <span>→</span>
+          <span className={step >= 3 ? 'text-purple-700 font-bold' : ''}>3. Xác nhận thực thi</span>
+        </div>
+
+        <div className="p-6 overflow-y-auto space-y-4 flex-1 text-sm text-gray-700">
+          {step === 1 && (
+            <div className="space-y-4">
+              <p className="text-gray-600 leading-relaxed">
+                Hệ thống sẽ quét toàn bộ học sinh của năm học cũ, tự động xét điều kiện tốt nghiệp cho Khối 12, thăng hạng Khối 11 lên 12, Khối 10 lên 11 và lọc học sinh có nguy cơ lưu ban (&gt;45 buổi vắng).
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200">
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase">Năm học hiện tại (Nguồn):</label>
+                  <input type="text" value={fromYear} onChange={e => setFromYear(e.target.value)} className="w-full px-4 py-2.5 border border-gray-300 rounded-xl font-mono text-sm bg-white outline-none" />
+                </div>
+                <div className="bg-purple-50/40 p-4 rounded-2xl border border-purple-200">
+                  <label className="block text-xs font-semibold text-purple-700 mb-1.5 uppercase">Năm học mới (Đích):</label>
+                  <input type="text" value={toYear} onChange={e => setToYear(e.target.value)} className="w-full px-4 py-2.5 border border-purple-300 rounded-xl font-mono text-sm bg-white focus:ring-2 focus:ring-purple-500 outline-none" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && simulation && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                  <div className="text-2xl font-black text-emerald-700">{simulation.summary.graduatedCount}</div>
+                  <div className="text-xs text-emerald-600 font-bold mt-1">K12 Tốt Nghiệp</div>
+                </div>
+                <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl">
+                  <div className="text-2xl font-black text-blue-700">{simulation.summary.promoteTo12Count}</div>
+                  <div className="text-xs text-blue-600 font-bold mt-1">K11 Lên Lớp 12</div>
+                </div>
+                <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-2xl">
+                  <div className="text-2xl font-black text-indigo-700">{simulation.summary.promoteTo11Count}</div>
+                  <div className="text-xs text-indigo-600 font-bold mt-1">K10 Lên Lớp 11</div>
+                </div>
+                <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl">
+                  <div className="text-2xl font-black text-red-700">{simulation.summary.retainCount}</div>
+                  <div className="text-xs text-red-600 font-bold mt-1">Lưu Ban (Vắng &gt;45)</div>
+                </div>
+              </div>
+
+              {simulation.retainList.length > 0 && (
+                <div className="p-4 bg-red-50/80 border border-red-200 rounded-2xl text-xs space-y-1.5">
+                  <span className="font-bold text-red-800">Cảnh báo học sinh lưu ban (ở lại lớp):</span>
+                  <ul className="list-disc pl-5 text-red-700 space-y-1">
+                    {simulation.retainList.map(r => (
+                      <li key={r.id}><strong>{r.fullName}</strong> ({r.studentCode} - {r.currentClass}): {r.reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-between items-center">
+          {step === 1 ? (
+            <div></div>
+          ) : (
+            <button onClick={() => setStep(1)} className="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-200 text-sm font-medium">
+              Quay lại
+            </button>
+          )}
+
+          {step === 1 ? (
+            <button 
+              onClick={handleSimulate} 
+              disabled={loading}
+              className="px-5 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-semibold text-sm flex items-center gap-2 shadow-md cursor-pointer"
+            >
+              {loading ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
+              Mô phỏng & Xem trước
+            </button>
+          ) : (
+            <button 
+              onClick={handleExecute} 
+              disabled={loading}
+              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm flex items-center gap-2 shadow-md cursor-pointer"
+            >
+              {loading ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+              Xác nhận Thực thi
+            </button>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 const Students = () => {
   const [students, setStudents] = useState([]);
   const [classesList, setClassesList] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedFilterClass, setSelectedFilterClass] = useState('all');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSheetModalOpen, setIsSheetModalOpen] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState(null);
   const [loading, setLoading] = useState(true);
-  
+
+  // Search & Filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedGrade, setSelectedGrade] = useState('all');
+  const [selectedFilterClass, setSelectedFilterClass] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [selectedGender, setSelectedGender] = useState('all');
+
+  // Sorting states
+  const [sortField, setSortField] = useState('studentCode');
+  const [sortOrder, setSortOrder] = useState('asc');
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  // Bulk Selection state
+  const [selectedStudentIds, setSelectedStudentIds] = useState([]);
+
+  // Modals state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [isSheetModalOpen, setIsSheetModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  
+
+  // New Modals: Reset Password, Bulk Change Class, Rollover Wizard
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetPasswordData, setResetPasswordData] = useState(null);
+  const [isBulkClassModalOpen, setIsBulkClassModalOpen] = useState(false);
+  const [isRolloverModalOpen, setIsRolloverModalOpen] = useState(false);
+
   // Google Sheets state
   const [webhookUrl, setWebhookUrl] = useState(() => 
     localStorage.getItem('google_sheet_webhook_url') || 'https://script.google.com/macros/s/AKfycbxGfcWXmnD0-pKDZiC8NbOQn0v_9fsfIw18iaFgv0PpUE8Pt0myFUGVNhswWnxXmNQ49A/exec'
@@ -658,6 +987,231 @@ const Students = () => {
   const navigate = useNavigate();
   const userRole = localStorage.getItem('userRole') || 'student';
 
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [resStudents, resClasses] = await Promise.all([
+        api.get('/students'),
+        api.get('/classes')
+      ]);
+      setStudents(resStudents.data);
+      setClassesList(resClasses.data);
+      setSelectedStudentIds([]);
+    } catch (err) {
+      console.error(err);
+      Swal.fire('Lỗi', 'Không thể tải dữ liệu học sinh!', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Lọc danh sách học sinh
+  const filteredStudents = students.filter(s => {
+    const term = searchTerm.toLowerCase().trim();
+    const matchSearch = !term || 
+      s.fullName?.toLowerCase().includes(term) || 
+      s.studentCode?.toLowerCase().includes(term) ||
+      (s.phone && s.phone.includes(term)) ||
+      (s.parentPhone && s.parentPhone.includes(term));
+
+    const matchGrade = selectedGrade === 'all' || 
+      (s.class && String(s.class.grade) === String(selectedGrade));
+
+    const matchClass = selectedFilterClass === 'all' || s.classId === selectedFilterClass;
+
+    const matchStatus = selectedStatus === 'all' || 
+      (s.status === selectedStatus) || 
+      (selectedStatus === 'active' && (!s.status || s.status === 'active'));
+
+    const matchGender = selectedGender === 'all' || s.gender === selectedGender;
+
+    return matchSearch && matchGrade && matchClass && matchStatus && matchGender;
+  });
+
+  // Sắp xếp danh sách
+  const sortedStudents = [...filteredStudents].sort((a, b) => {
+    let aVal = a[sortField] || '';
+    let bVal = b[sortField] || '';
+    if (sortField === 'class') {
+      aVal = a.class?.className || '';
+      bVal = b.class?.className || '';
+    }
+    if (typeof aVal === 'string') {
+      return sortOrder === 'asc' 
+        ? aVal.localeCompare(bVal, 'vi', { sensitivity: 'base' }) 
+        : bVal.localeCompare(aVal, 'vi', { sensitivity: 'base' });
+    }
+    return sortOrder === 'asc' ? (aVal > bVal ? 1 : -1) : (aVal < bVal ? 1 : -1);
+  });
+
+  // Phân trang
+  const totalItems = sortedStudents.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const paginatedStudents = sortedStudents.slice((currentPageSafe - 1) * pageSize, currentPageSafe * pageSize);
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
+
+  // Selection
+  const isAllCurrentPageSelected = paginatedStudents.length > 0 && 
+    paginatedStudents.every(s => selectedStudentIds.includes(s.id));
+
+  const handleToggleSelectAll = () => {
+    if (isAllCurrentPageSelected) {
+      const pageIds = new Set(paginatedStudents.map(s => s.id));
+      setSelectedStudentIds(prev => prev.filter(id => !pageIds.has(id)));
+    } else {
+      const pageIds = paginatedStudents.map(s => s.id);
+      setSelectedStudentIds(prev => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const handleToggleSelect = (id) => {
+    setSelectedStudentIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  // Reset MK cho 1 học sinh
+  const handleResetPassword = async (student) => {
+    const result = await Swal.fire({
+      title: 'Cấp lại Mật khẩu?',
+      html: `Hệ thống sẽ sinh mật khẩu ngẫu nhiên mới cho <strong>${student.fullName}</strong> (${student.studentCode}).`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Tạo mật khẩu mới',
+      cancelButtonText: 'Hủy',
+      confirmButtonColor: '#f59e0b'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const res = await api.post(`/students/${student.id}/reset-password`);
+        setResetPasswordData(res.data.data);
+        setIsResetModalOpen(true);
+      } catch (err) {
+        Swal.fire('Lỗi', err.response?.data?.message || 'Không thể đặt lại mật khẩu', 'error');
+      }
+    }
+  };
+
+  // Bulk Actions
+  const handleBulkChangeClassConfirm = async (targetClassId) => {
+    try {
+      const res = await api.post('/students/bulk/change-class', {
+        studentIds: selectedStudentIds,
+        targetClassId
+      });
+      Swal.fire('Thành công', res.data.message, 'success');
+      setIsBulkClassModalOpen(false);
+      fetchData();
+    } catch (err) {
+      Swal.fire('Lỗi', err.response?.data?.message || 'Lỗi khi chuyển lớp hàng loạt', 'error');
+    }
+  };
+
+  const handleBulkToggleStatus = async (status) => {
+    const actionText = status === 'blocked' ? 'khóa' : 'mở khóa';
+    const result = await Swal.fire({
+      title: `Xác nhận ${actionText}?`,
+      text: `Bạn có chắc muốn ${actionText} tài khoản của ${selectedStudentIds.length} học sinh đã chọn?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: `Đồng ý ${actionText}`,
+      cancelButtonText: 'Hủy'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const res = await api.post('/students/bulk/toggle-status', {
+          studentIds: selectedStudentIds,
+          status
+        });
+        Swal.fire('Thành công', res.data.message, 'success');
+        fetchData();
+      } catch (err) {
+        Swal.fire('Lỗi', err.response?.data?.message || 'Lỗi khi cập nhật trạng thái', 'error');
+      }
+    }
+  };
+
+  const handleBulkResetPassword = async () => {
+    const result = await Swal.fire({
+      title: 'Reset MK Hàng Loạt?',
+      text: `Hệ thống sẽ sinh mật khẩu mới cho ${selectedStudentIds.length} học sinh và xuất file danh sách.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Thực hiện & Xuất file',
+      cancelButtonText: 'Hủy',
+      confirmButtonColor: '#f59e0b'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const res = await api.post('/students/bulk/reset-password', {
+          studentIds: selectedStudentIds
+        });
+        const credentials = res.data.data || [];
+
+        // Xuất file CSV
+        const headers = 'STT,Mã Học Sinh,Họ và Tên,Email,Mật Khẩu Tạm Thời\n';
+        const rows = credentials.map((c, idx) => 
+          `"${idx + 1}","${c.studentCode}","${c.fullName}","${c.email}","${c.temporaryPassword}"`
+        ).join('\n');
+
+        const blob = new Blob(['\uFEFF' + headers + rows], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `Mat_Khau_Moi_Hoc_Sinh_${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        Swal.fire('Thành công', `Đã cấp mật khẩu mới cho ${credentials.length} học sinh và tải xuống file danh sách.`, 'success');
+        fetchData();
+      } catch (err) {
+        Swal.fire('Lỗi', err.response?.data?.message || 'Lỗi khi reset mật khẩu hàng loạt', 'error');
+      }
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const result = await Swal.fire({
+      title: 'Xóa hàng loạt học sinh?',
+      text: `Toàn bộ hồ sơ và tài khoản của ${selectedStudentIds.length} học sinh đã chọn sẽ bị xóa. Hành động này không thể hoàn tác!`,
+      icon: 'error',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonText: 'Hủy',
+      confirmButtonText: 'Xóa vĩnh viễn'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const res = await api.post('/students/bulk/delete', {
+          studentIds: selectedStudentIds
+        });
+        Swal.fire('Thành công', res.data.message, 'success');
+        fetchData();
+      } catch (err) {
+        Swal.fire('Lỗi', err.response?.data?.message || 'Lỗi khi xóa học sinh hàng loạt', 'error');
+      }
+    }
+  };
+
+  // Xuất Excel danh sách
   const handleExportExcel = () => {
     try {
       const exportList = filteredStudents.length > 0 ? filteredStudents : students;
@@ -666,12 +1220,13 @@ const Students = () => {
         return;
       }
 
-      const headers = 'STT,Mã Học Sinh,Họ và Tên,Giới Tính,Ngày Sinh,Lớp,SĐT Cá Nhân,Tên Phụ Huynh,SĐT Phụ Huynh,Trạng Thái\n';
+      const headers = 'STT,Mã Học Sinh,Họ và Tên,Giới Tính,Ngày Sinh,Khối,Lớp,SĐT Cá Nhân,Tên Phụ Huynh,SĐT Phụ Huynh,Trạng Thái\n';
       const rows = exportList.map((s, idx) => {
         const dob = s.dateOfBirth ? new Date(s.dateOfBirth).toLocaleDateString('vi-VN') : '';
         const className = s.class?.className || 'Chưa xếp lớp';
+        const grade = s.class?.grade ? `Khối ${s.class.grade}` : '';
         const status = s.user?.status === 'blocked' ? 'Đã khóa' : (s.user?.status === 'suspended' ? 'Đình chỉ' : 'Hoạt động');
-        return `"${idx + 1}","${s.studentCode || ''}","${s.fullName || ''}","${s.gender || 'Nam'}","${dob}","${className}","${s.phone || ''}","${s.parentName || ''}","${s.parentPhone || ''}","${status}"`;
+        return `"${idx + 1}","${s.studentCode || ''}","${s.fullName || ''}","${s.gender || 'Nam'}","${dob}","${grade}","${className}","${s.phone || ''}","${s.parentName || ''}","${s.parentPhone || ''}","${status}"`;
       }).join('\n');
 
       const csvContent = '\uFEFF' + headers + rows;
@@ -688,27 +1243,6 @@ const Students = () => {
     } catch (err) {
       console.error('Export error:', err);
       Swal.fire('Lỗi', 'Không thể xuất danh sách học sinh', 'error');
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [resStudents, resClasses] = await Promise.all([
-        api.get('/students'),
-        api.get('/classes')
-      ]);
-      setStudents(resStudents.data);
-      setClassesList(resClasses.data);
-    } catch (err) {
-      console.error(err);
-      Swal.fire('Lỗi', 'Không thể tải dữ liệu!', 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -748,162 +1282,111 @@ const Students = () => {
     try {
       if (selectedStudent) {
         await api.put(`/students/${selectedStudent.id}`, formData);
-        Swal.fire('Thành công', 'Cập nhật thành công', 'success');
+        Swal.fire('Thành công', 'Cập nhật thông tin học sinh thành công', 'success');
       } else {
         await api.post('/students', formData);
-        Swal.fire('Thành công', 'Thêm học sinh thành công', 'success');
+        Swal.fire('Thành công', 'Thêm học sinh mới thành công', 'success');
       }
       setIsModalOpen(false);
       fetchData();
     } catch (err) {
-      Swal.fire('Lỗi', err.response?.data?.message || 'Có lỗi xảy ra', 'error');
+      console.error(err);
+      Swal.fire('Lỗi', err.response?.data?.message || 'Không thể lưu học sinh', 'error');
     }
   };
 
-  // Đồng bộ từ Google Sheet (Import)
   const handleSyncFromSheets = async () => {
     if (!webhookUrl) {
       setIsSheetModalOpen(true);
-      Swal.fire({
-        icon: 'info',
-        title: 'Chưa có Webhook URL',
-        text: 'Vui lòng nhập Google Apps Script Webhook URL để tiến hành đồng bộ!'
-      });
+      Swal.fire('Chưa có Webhook URL', 'Vui lòng cài đặt Webhook URL trước khi đồng bộ', 'info');
       return;
     }
-
     try {
       setIsSyncing(true);
       const res = await api.post('/students/google-sheets/sync', { webhookUrl });
-      
-      Swal.fire({
-        icon: 'success',
-        title: 'Đồng bộ Google Sheet thành công!',
-        html: `
-          <div class="text-left text-sm space-y-1">
-            <p><b>Tổng số dòng xử lý:</b> ${res.data.total}</p>
-            <p class="text-emerald-600"><b>✨ Thêm mới:</b> ${res.data.added} học sinh</p>
-            <p class="text-blue-600"><b>🔄 Cập nhật:</b> ${res.data.updated} học sinh</p>
-            ${res.data.errors?.length ? `<p class="text-red-500"><b>⚠️ Cảnh báo:</b> ${res.data.errors.length} dòng lỗi</p>` : ''}
-          </div>
-        `
-      });
-
+      Swal.fire('Thành công', res.data.message || 'Đồng bộ từ Google Sheet hoàn tất', 'success');
       fetchData();
     } catch (err) {
-      console.error(err);
-      Swal.fire({
-        icon: 'error',
-        title: 'Đồng bộ thất bại',
-        text: err.response?.data?.message || 'Không thể kết nối đến Google Sheet Webhook'
-      });
+      Swal.fire('Lỗi', err.response?.data?.message || 'Lỗi khi kéo dữ liệu Google Sheet', 'error');
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Xuất dữ liệu lên Google Sheet (Export)
   const handleExportToSheets = async () => {
     if (!webhookUrl) {
       setIsSheetModalOpen(true);
-      Swal.fire({
-        icon: 'info',
-        title: 'Chưa có Webhook URL',
-        text: 'Vui lòng nhập Google Apps Script Webhook URL để tiến hành xuất dữ liệu!'
-      });
+      Swal.fire('Chưa có Webhook URL', 'Vui lòng nhập Webhook URL', 'info');
       return;
     }
-
     try {
       setIsExporting(true);
       const res = await api.post('/students/google-sheets/export', { webhookUrl });
-      
-      Swal.fire({
-        icon: 'success',
-        title: 'Xuất dữ liệu thành công!',
-        text: `Đã xuất ${res.data.count} học sinh lên Google Sheet.`
-      });
+      Swal.fire('Thành công', `Đã xuất ${res.data.count} học sinh lên Google Sheet`, 'success');
     } catch (err) {
-      console.error(err);
-      Swal.fire({
-        icon: 'error',
-        title: 'Xuất dữ liệu thất bại',
-        text: err.response?.data?.message || 'Lỗi khi gửi dữ liệu sang Google Sheet Webhook'
-      });
+      Swal.fire('Lỗi', err.response?.data?.message || 'Lỗi khi gửi dữ liệu sang Google Sheet', 'error');
     } finally {
       setIsExporting(false);
     }
   };
 
-  const filteredStudents = students.filter(s => {
-    const matchSearch = s.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                        s.studentCode?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchClass = selectedFilterClass === 'all' || s.classId === selectedFilterClass;
-    return matchSearch && matchClass;
-  });
-
   return (
-    <div className="space-y-6 font-poppins">
-      {/* Header & Quick Action Buttons */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+    <div className="space-y-6 font-poppins pb-24 relative">
+      {/* Header Bar */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Quản lý Học sinh</h2>
-          <p className="text-sm text-gray-500 mt-1">Danh sách học sinh, hồ sơ và đồng bộ dữ liệu thời gian thực</p>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-bold text-gray-800">Quản lý Học sinh</h2>
+            <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-200">
+              {totalItems} Học sinh
+            </span>
+          </div>
+          <p className="text-sm text-gray-500 mt-1">Danh sách hồ sơ, tác vụ hàng loạt và chuyển năm học tự động</p>
         </div>
 
         {userRole === 'admin' && (
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Excel / CSV Batch Import */}
+            {/* Rollover Wizard Button */}
+            <button 
+              onClick={() => setIsRolloverModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-purple-50 text-purple-700 hover:bg-purple-100 font-semibold text-sm transition-all border border-purple-200 shadow-sm cursor-pointer"
+              title="Chuyển năm học & Xếp lớp tự động (K12 tốt nghiệp, K10-K11 lên lớp)"
+            >
+              <Sparkles size={16} className="text-purple-600" />
+              <span>Chuyển Năm Học</span>
+            </button>
+
+            {/* Excel / CSV Import */}
             <button 
               onClick={() => setIsImportModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold text-sm transition-all border border-indigo-200 shadow-sm cursor-pointer"
-              title="Nhập danh sách học sinh từ file Excel / CSV có xem trước"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold text-sm transition-all border border-indigo-200 shadow-sm cursor-pointer"
             >
               <FileSpreadsheet size={16} className="text-indigo-600" />
               <span>Nhập Excel</span>
             </button>
 
-            {/* Excel Direct Export */}
+            {/* Excel Export */}
             <button 
               onClick={handleExportExcel}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold text-sm transition-all border border-emerald-200 shadow-sm cursor-pointer"
-              title="Xuất danh sách học sinh hiện tại ra file Excel / CSV"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold text-sm transition-all border border-emerald-200 shadow-sm cursor-pointer"
             >
               <Download size={16} className="text-emerald-600" />
               <span>Xuất Excel</span>
             </button>
 
-            {/* Google Sheets Actions */}
+            {/* Google Sheets Sync */}
             <button 
               onClick={handleSyncFromSheets}
               disabled={isSyncing}
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold text-sm transition-all border border-slate-200 shadow-sm"
-              title="Kéo danh sách học sinh từ Google Sheet về hệ thống"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold text-sm transition-all border border-slate-200 shadow-sm"
+              title="Đồng bộ 2 chiều với Google Sheets"
             >
-              {isSyncing ? <RefreshCw size={16} className="animate-spin text-slate-600" /> : <Download size={16} />}
+              {isSyncing ? <RefreshCw size={16} className="animate-spin text-slate-600" /> : <RefreshCw size={16} />}
               <span>Đồng bộ Sheet</span>
             </button>
 
-            <button 
-              onClick={handleExportToSheets}
-              disabled={isExporting}
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 font-semibold text-sm transition-all border border-slate-200 shadow-sm"
-              title="Ghi toàn bộ học sinh lên Google Sheet"
-            >
-              {isExporting ? <RefreshCw size={16} className="animate-spin text-slate-600" /> : <Upload size={16} />}
-              <span>Xuất Sheet</span>
-            </button>
-
-            <button 
-              onClick={() => setIsSheetModalOpen(true)}
-              className="p-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors cursor-pointer"
-              title="Cài đặt kết nối Google Sheet & Xem mã Apps Script"
-            >
-              <Settings size={18} />
-            </button>
-
-            {/* Standard Add Student Button */}
-            <button onClick={handleAdd} className="btn-primary flex items-center gap-2 px-4 py-2.5 text-sm cursor-pointer">
+            {/* Add Student Button */}
+            <button onClick={handleAdd} className="btn-primary flex items-center gap-2 px-4 py-2.5 text-sm rounded-2xl cursor-pointer">
               <Plus size={18} />
               Thêm Học sinh
             </button>
@@ -912,127 +1395,377 @@ const Students = () => {
       </div>
 
       {/* Main Table Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-        {/* Toolbar */}
-        <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row gap-4 items-center justify-between bg-gray-50/50">
-          <div className="relative w-full sm:w-80">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search size={18} className="text-gray-400" />
+      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+        {/* Multi-filter Toolbar */}
+        <div className="p-5 border-b border-gray-100 bg-gray-50/60 flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+            {/* Search Input */}
+            <div className="relative w-full md:w-80">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <Search size={18} className="text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Tìm tên, mã HS, SĐT..."
+                className="pl-10 pr-4 py-2.5 w-full border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white shadow-sm"
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+              />
             </div>
-            <input
-              type="text"
-              placeholder="Tìm kiếm theo tên, mã HS..."
-              className="pl-10 pr-4 py-2.5 w-full border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">Lọc theo lớp:</span>
-            <select 
-              className="px-4 py-2.5 w-full sm:w-auto border border-gray-200 rounded-xl text-gray-700 outline-none text-sm bg-white focus:ring-2 focus:ring-blue-500 shadow-sm"
-              value={selectedFilterClass}
-              onChange={(e) => setSelectedFilterClass(e.target.value)}
-            >
-              <option value="all">Tất cả lớp học</option>
-              {classesList.map((c, cIdx) => (
-                <option key={c.id || `class-filter-${cIdx}`} value={c.id}>{c.className} (Khối {c.grade})</option>
-              ))}
-            </select>
+
+            {/* Filter Dropdowns Grid */}
+            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+              {/* Filter by Grade */}
+              <select 
+                className="px-3.5 py-2.5 border border-gray-200 rounded-2xl text-gray-700 outline-none text-sm bg-white focus:ring-2 focus:ring-blue-500 shadow-sm"
+                value={selectedGrade}
+                onChange={(e) => { setSelectedGrade(e.target.value); setSelectedFilterClass('all'); setCurrentPage(1); }}
+              >
+                <option value="all">Tất cả Khối</option>
+                <option value="10">Khối 10</option>
+                <option value="11">Khối 11</option>
+                <option value="12">Khối 12</option>
+              </select>
+
+              {/* Filter by Class */}
+              <select 
+                className="px-3.5 py-2.5 border border-gray-200 rounded-2xl text-gray-700 outline-none text-sm bg-white focus:ring-2 focus:ring-blue-500 shadow-sm"
+                value={selectedFilterClass}
+                onChange={(e) => { setSelectedFilterClass(e.target.value); setCurrentPage(1); }}
+              >
+                <option value="all">Tất cả lớp học</option>
+                {classesList
+                  .filter(c => selectedGrade === 'all' || String(c.grade) === String(selectedGrade))
+                  .map(c => (
+                    <option key={c.id} value={c.id}>{c.className}</option>
+                  ))}
+              </select>
+
+              {/* Filter by Status */}
+              <select 
+                className="px-3.5 py-2.5 border border-gray-200 rounded-2xl text-gray-700 outline-none text-sm bg-white focus:ring-2 focus:ring-blue-500 shadow-sm"
+                value={selectedStatus}
+                onChange={(e) => { setSelectedStatus(e.target.value); setCurrentPage(1); }}
+              >
+                <option value="all">Tất cả trạng thái</option>
+                <option value="active">Đang học</option>
+                <option value="graduated">Đã tốt nghiệp</option>
+                <option value="suspended">Đình chỉ</option>
+                <option value="reserved">Bảo lưu</option>
+              </select>
+
+              {/* Filter by Gender */}
+              <select 
+                className="px-3.5 py-2.5 border border-gray-200 rounded-2xl text-gray-700 outline-none text-sm bg-white focus:ring-2 focus:ring-blue-500 shadow-sm"
+                value={selectedGender}
+                onChange={(e) => { setSelectedGender(e.target.value); setCurrentPage(1); }}
+              >
+                <option value="all">Tất cả giới tính</option>
+                <option value="Nam">Nam</option>
+                <option value="Nữ">Nữ</option>
+              </select>
+            </div>
           </div>
         </div>
 
         {/* Table */}
         <div className="overflow-x-auto">
           {loading ? (
-            <div className="p-12 text-center text-gray-500 flex flex-col items-center justify-center gap-3">
+            <div className="p-16 text-center text-gray-500 flex flex-col items-center justify-center gap-3">
               <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
-              <span>Đang tải danh sách học sinh...</span>
+              <span>Đang nạp dữ liệu học sinh...</span>
             </div>
           ) : (
-            <table className="w-full text-left text-sm text-gray-600">
-              <thead className="bg-gray-50 text-gray-700 font-semibold">
+            <table className="w-full text-left text-sm text-gray-600 border-collapse">
+              <thead className="bg-gray-50/80 text-gray-700 font-semibold border-b border-gray-100">
                 <tr>
-                  <th className="px-6 py-4 border-b border-gray-100">Mã HS</th>
-                  <th className="px-6 py-4 border-b border-gray-100">Họ và tên</th>
-                  <th className="px-6 py-4 border-b border-gray-100">Giới tính</th>
-                  <th className="px-6 py-4 border-b border-gray-100">Lớp</th>
-                  <th className="px-6 py-4 border-b border-gray-100">SĐT</th>
-                  <th className="px-6 py-4 border-b border-gray-100">Trạng thái</th>
                   {userRole === 'admin' && (
-                    <th className="px-6 py-4 border-b border-gray-100">Tài khoản (Tự động)</th>
+                    <th className="px-4 py-4 w-12 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={isAllCurrentPageSelected} 
+                        onChange={handleToggleSelectAll} 
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </th>
                   )}
+                  <th 
+                    onClick={() => handleSort('studentCode')} 
+                    className="px-5 py-4 cursor-pointer select-none hover:text-blue-600 transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Mã HS</span>
+                      <ArrowUpDown size={14} className="text-gray-400" />
+                    </div>
+                  </th>
+                  <th 
+                    onClick={() => handleSort('fullName')} 
+                    className="px-5 py-4 cursor-pointer select-none hover:text-blue-600 transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Họ và tên</span>
+                      <ArrowUpDown size={14} className="text-gray-400" />
+                    </div>
+                  </th>
+                  <th className="px-4 py-4">Giới tính</th>
+                  <th 
+                    onClick={() => handleSort('class')} 
+                    className="px-5 py-4 cursor-pointer select-none hover:text-blue-600 transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Khối / Lớp</span>
+                      <ArrowUpDown size={14} className="text-gray-400" />
+                    </div>
+                  </th>
+                  <th className="px-4 py-4">SĐT Học Sinh</th>
+                  <th className="px-4 py-4">SĐT Phụ Huynh</th>
+                  <th className="px-4 py-4">Trạng thái HS</th>
+                  <th className="px-4 py-4">Tài khoản</th>
                   {userRole === 'admin' && (
-                    <th className="px-6 py-4 border-b border-gray-100 text-right">Thao tác</th>
+                    <th className="px-5 py-4 text-right">Thao tác</th>
                   )}
                 </tr>
               </thead>
-              <tbody>
-                {filteredStudents.length === 0 ? (
+              <tbody className="divide-y divide-gray-100">
+                {paginatedStudents.length === 0 ? (
                   <tr>
-                    <td colSpan={userRole === 'admin' ? 8 : 6} className="px-6 py-12 text-center text-gray-400">
+                    <td colSpan={userRole === 'admin' ? 10 : 8} className="px-6 py-16 text-center text-gray-400">
                       <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                      <p className="font-medium text-gray-600">Không tìm thấy dữ liệu học sinh nào.</p>
-                      <p className="text-xs mt-1 text-gray-400">Thêm học sinh mới hoặc Đồng bộ từ Google Sheet để nạp dữ liệu.</p>
+                      <p className="font-semibold text-gray-700">Không tìm thấy học sinh nào phù hợp.</p>
+                      <p className="text-xs mt-1 text-gray-400">Hãy thử thay đổi từ khóa tìm kiếm hoặc bỏ bớt các bộ lọc.</p>
                     </td>
                   </tr>
-                ) : filteredStudents.map((student, sIdx) => (
-                  <tr 
-                    key={student.id || student.studentCode || `student-row-${sIdx}`} 
-                    className="hover:bg-blue-50/50 transition-colors border-b border-gray-50 last:border-0 cursor-pointer"
-                    onClick={() => navigate(`/students/${student.id}`)}
-                  >
-                    <td className="px-6 py-4 font-semibold text-blue-600">{student.studentCode}</td>
-                    <td className="px-6 py-4 font-medium text-gray-900">{student.fullName}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${
-                        student.gender === 'Nữ' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'
-                      }`}>
-                        {student.gender || 'Nam'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-lg text-xs font-semibold">
-                        {student.class ? student.class.className : 'Chưa xếp'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-600 font-mono text-xs">{student.phone || '---'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-lg text-xs font-medium ${
-                        student.user?.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {student.user?.status === 'active' ? 'Hoạt động' : 'Bị khóa'}
-                      </span>
-                    </td>
-                    {userRole === 'admin' && (
-                      <td className="px-6 py-4 text-xs text-gray-500">
-                        <span className="font-mono text-gray-700">{student.user?.email || 'N/A'}</span><br/>
-                        <span className="text-emerald-600 font-mono">Pass: {student.studentCode}@123</span>
+                ) : paginatedStudents.map((student) => {
+                  const isSelected = selectedStudentIds.includes(student.id);
+                  const isAccountActive = student.user?.status === 'active';
+
+                  return (
+                    <tr 
+                      key={student.id} 
+                      className={`hover:bg-blue-50/40 transition-colors cursor-pointer ${
+                        isSelected ? 'bg-blue-50/60' : ''
+                      }`}
+                      onClick={() => navigate(`/students/${student.id}`)}
+                    >
+                      {userRole === 'admin' && (
+                        <td className="px-4 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected} 
+                            onChange={() => handleToggleSelect(student.id)} 
+                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                        </td>
+                      )}
+                      <td className="px-5 py-4 font-mono font-bold text-blue-600 text-xs">
+                        {student.studentCode}
                       </td>
-                    )}
-                    {userRole === 'admin' && (
-                      <td className="px-6 py-4">
-                        <div className="flex justify-end space-x-2">
-                          <button onClick={(e) => { e.stopPropagation(); navigate(`/students/${student.id}`); }} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Xem chi tiết">
-                            <Eye size={18} />
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleEdit(student); }} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Sửa">
-                            <Edit size={18} />
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleDelete(student.id); }} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Xóa">
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
+                      <td className="px-5 py-4">
+                        <div className="font-semibold text-gray-900">{student.fullName}</div>
+                        <div className="text-xs text-gray-400 font-mono">{student.user?.email || 'Chưa có email'}</div>
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td className="px-4 py-4">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          student.gender === 'Nữ' 
+                            ? 'bg-pink-50 text-pink-700 border border-pink-200' 
+                            : 'bg-blue-50 text-blue-700 border border-blue-200'
+                        }`}>
+                          {student.gender || 'Nam'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        {student.class ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              K{student.class.grade}
+                            </span>
+                            <span className="font-semibold text-gray-800 text-xs">
+                              {student.class.className}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400 italic">Chưa xếp</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 font-mono text-xs text-gray-600">
+                        {student.phone || '---'}
+                      </td>
+                      <td className="px-4 py-4 font-mono text-xs text-gray-600" onClick={e => e.stopPropagation()}>
+                        {student.parentPhone ? (
+                          <a href={`tel:${student.parentPhone}`} className="text-emerald-600 hover:underline font-semibold flex items-center gap-1">
+                            <PhoneCall size={12} />
+                            {student.parentPhone}
+                          </a>
+                        ) : (
+                          student.parentName || '---'
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          student.status === 'graduated'
+                            ? 'bg-purple-100 text-purple-700'
+                            : student.status === 'suspended'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {student.status === 'graduated' ? 'Tốt nghiệp' : (student.status === 'suspended' ? 'Đình chỉ' : 'Đang học')}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          isAccountActive ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'
+                        }`}>
+                          {isAccountActive ? 'Hoạt động' : 'Bị khóa'}
+                        </span>
+                      </td>
+                      {userRole === 'admin' && (
+                        <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex justify-end items-center gap-1">
+                            <button 
+                              onClick={() => navigate(`/students/${student.id}`)} 
+                              className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" 
+                              title="Hồ sơ 360°"
+                            >
+                              <Eye size={17} />
+                            </button>
+                            <button 
+                              onClick={() => handleResetPassword(student)} 
+                              className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" 
+                              title="Cấp lại / Reset Mật khẩu"
+                            >
+                              <Key size={17} />
+                            </button>
+                            <button 
+                              onClick={() => handleEdit(student)} 
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
+                              title="Sửa thông tin"
+                            >
+                              <Edit size={17} />
+                            </button>
+                            <button 
+                              onClick={() => handleDelete(student.id)} 
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors" 
+                              title="Xóa học sinh"
+                            >
+                              <Trash2 size={17} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
         </div>
+
+        {/* Pagination Footer */}
+        <div className="p-4 border-t border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-gray-600">
+          <div className="flex items-center gap-2">
+            <span>Hiển thị</span>
+            <select 
+              value={pageSize} 
+              onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+              className="px-2.5 py-1 border border-gray-200 rounded-lg bg-white outline-none font-semibold text-gray-700"
+            >
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+            <span>trên tổng <strong>{totalItems}</strong> học sinh</span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button 
+              disabled={currentPageSafe <= 1}
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 disabled:opacity-40 transition-colors"
+              title="Trang trước"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="px-3 font-semibold text-gray-800">
+              Trang {currentPageSafe} / {totalPages}
+            </span>
+            <button 
+              disabled={currentPageSafe >= totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              className="p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-100 disabled:opacity-40 transition-colors"
+              title="Trang sau"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* Floating Bulk Action Bar */}
+      <AnimatePresence>
+        {selectedStudentIds.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 text-white backdrop-blur-md px-6 py-3.5 rounded-3xl shadow-2xl border border-slate-700 flex flex-wrap items-center gap-3 sm:gap-4 max-w-3xl w-[92vw]"
+          >
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
+                {selectedStudentIds.length}
+              </span>
+              <span className="text-xs font-medium text-slate-300 hidden sm:inline">học sinh được chọn</span>
+            </div>
+
+            <div className="h-4 w-px bg-slate-700 hidden sm:block" />
+
+            <div className="flex flex-wrap items-center gap-2 flex-1 justify-end">
+              <button 
+                onClick={() => setIsBulkClassModalOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span>Chuyển Lớp</span>
+              </button>
+
+              <button 
+                onClick={() => handleBulkToggleStatus('blocked')}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+              >
+                <span>Khóa TK</span>
+              </button>
+
+              <button 
+                onClick={() => handleBulkToggleStatus('active')}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+              >
+                <span>Mở Khóa</span>
+              </button>
+
+              <button 
+                onClick={handleBulkResetPassword}
+                className="px-3 py-1.5 rounded-xl bg-amber-600/90 hover:bg-amber-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span>Reset MK Batch</span>
+              </button>
+
+              <button 
+                onClick={handleBulkDelete}
+                className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span>Xóa</span>
+              </button>
+
+              <button 
+                onClick={() => setSelectedStudentIds([])}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ml-1"
+                title="Bỏ chọn tất cả"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Modals */}
       <AnimatePresence>

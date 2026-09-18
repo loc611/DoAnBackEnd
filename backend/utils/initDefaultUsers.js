@@ -35,6 +35,22 @@ export const initDefaultUsers = async () => {
     try {
         console.log('🔄 Checking default database seed (Admin, Teachers, Students, Subjects)...');
 
+        // Đồng bộ toàn bộ tài khoản Admin hiện có đảm bảo có role 'admin'
+        try {
+            await prisma.user.updateMany({
+                where: {
+                    OR: [
+                        { username: 'admin' },
+                        { email: 'admin@school.edu.vn' },
+                        { admin: { isNot: null } }
+                    ]
+                },
+                data: { role: 'admin' }
+            });
+        } catch (syncErr) {
+            console.warn('Admin role pre-sync notice:', syncErr.message);
+        }
+
         // 1. Check Admin
         const adminUser = await prisma.user.findFirst({
             where: {
@@ -56,6 +72,7 @@ export const initDefaultUsers = async () => {
                         username: 'admin',
                         email: 'admin@school.edu.vn',
                         password: adminPassHash,
+                        role: 'admin',
                         status: 'active'
                     }
                 });

@@ -5,6 +5,7 @@ import api from '../services/api';
 import { Search, Plus, Edit, Trash2, X, Eye, Users, Printer } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
+import StudentQuickViewModal from '../components/StudentQuickViewModal';
 
 const ClassFormModal = ({ isOpen, onClose, classData, onSuccess, allClasses }) => {
     const { register, handleSubmit, reset, watch, setValue } = useForm();
@@ -196,6 +197,13 @@ const ClassRosterModal = ({ isOpen, onClose, selectedClass, onRefreshClasses, on
     const [eligibleStudents, setEligibleStudents] = useState([]);
     const [selectedStudentIds, setSelectedStudentIds] = useState([]);
     const [addLoading, setAddLoading] = useState(false);
+    const [quickViewStudent, setQuickViewStudent] = useState(null);
+    const [isQuickViewOpen, setIsQuickViewOpen] = useState(false);
+
+    const handleViewStudentDetail = (student) => {
+        setQuickViewStudent(student);
+        setIsQuickViewOpen(true);
+    };
 
     useEffect(() => {
         if (isOpen && selectedClass) {
@@ -361,10 +369,14 @@ const ClassRosterModal = ({ isOpen, onClose, selectedClass, onRefreshClasses, on
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filtered.map((student, idx) => (
-                                    <tr key={student.id} className="hover:bg-indigo-50/40 transition-colors">
+                                    <tr 
+                                        key={student.id} 
+                                        onClick={() => handleViewStudentDetail(student)}
+                                        className="hover:bg-indigo-50/60 transition-colors cursor-pointer group"
+                                    >
                                         <td className="px-4 py-3 font-medium text-slate-400">{idx + 1}</td>
-                                        <td className="px-4 py-3 font-bold text-indigo-700">{student.studentCode}</td>
-                                        <td className="px-4 py-3 font-bold text-slate-900">{student.fullName}</td>
+                                        <td className="px-4 py-3 font-bold text-indigo-700 group-hover:text-indigo-900 group-hover:underline">{student.studentCode}</td>
+                                        <td className="px-4 py-3 font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{student.fullName}</td>
                                         <td className="px-4 py-3">
                                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                                                 student.gender === 'Nữ' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'
@@ -373,14 +385,25 @@ const ClassRosterModal = ({ isOpen, onClose, selectedClass, onRefreshClasses, on
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 font-medium text-slate-700">{student.phone || '—'}</td>
-                                        <td className="px-4 py-3 text-center">
-                                            <button
-                                                onClick={() => handleRemoveStudent(student)}
-                                                className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                                title="Xóa khỏi lớp"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
+                                        <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                                            <div className="flex items-center justify-center gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleViewStudentDetail(student)}
+                                                    className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors cursor-pointer"
+                                                    title="Xem chi tiết học sinh"
+                                                >
+                                                    <Eye size={16} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveStudent(student)}
+                                                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                                    title="Xóa khỏi lớp"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -458,6 +481,17 @@ const ClassRosterModal = ({ isOpen, onClose, selectedClass, onRefreshClasses, on
                     )}
                 </AnimatePresence>
             </motion.div>
+
+            {/* Quick View Student Detail Modal */}
+            <StudentQuickViewModal
+                isOpen={isQuickViewOpen}
+                onClose={() => {
+                    setIsQuickViewOpen(false);
+                    setQuickViewStudent(null);
+                }}
+                studentId={quickViewStudent?.id}
+                initialData={quickViewStudent}
+            />
         </div>
     );
 };

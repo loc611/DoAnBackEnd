@@ -6,6 +6,8 @@ import {
     evaluateSemesterSummary,
     roundScore 
 } from '../utils/gradeCalculator.js';
+import GradeChangeService from '../services/gradeChangeService.js';
+import ReportCardRemarkService from '../services/reportCardRemarkService.js';
 
 /**
  * =========================================================================
@@ -631,4 +633,181 @@ export const updateClassGrades = async (req, res) => {
 
 export const unlockClassGrades = async (req, res) => {
     return unlockSubjectGrades(req, res);
+};
+
+/**
+ * =========================================================================
+ * 🌟 5. QUY TRÌNH SỬA ĐIỂM SAU KHÓA SỔ (TWO-MAN RULE) & GỢI Ý NHẬN XÉT HỌC BẠ
+ * =========================================================================
+ */
+
+/**
+ * GVBM tạo yêu cầu sửa điểm sau khi sổ điểm đã khóa
+ * @route POST /api/grades/change-requests
+ */
+export const requestGradeChange = async (req, res) => {
+    try {
+        const { studentId, subjectId, classId, semester, columnKey, newScore, reason, proofUrl } = req.body;
+        
+        if (!studentId || !subjectId || !classId || !columnKey || newScore === undefined) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Vui lòng cung cấp đầy đủ: studentId, subjectId, classId, columnKey, newScore' 
+            });
+        }
+
+        const request = await GradeChangeService.createRequest({
+            userId: req.user.id,
+            studentId,
+            subjectId,
+            classId,
+            semester,
+            columnKey,
+            newScore,
+            reason,
+            proofUrl
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: 'Đã tạo yêu cầu sửa điểm thành công. Đang chờ GVCN xác nhận.',
+            data: request
+        });
+    } catch (error) {
+        console.error('requestGradeChange error:', error);
+        return res.status(400).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * Lấy danh sách yêu cầu sửa điểm (theo phân quyền GVBM, GVCN, Admin)
+ * @route GET /api/grades/change-requests
+ */
+export const getGradeChangeRequests = async (req, res) => {
+    try {
+        const { status, classId, subjectId, page, limit } = req.query;
+        const result = await GradeChangeService.getRequests({
+            user: req.user,
+            status,
+            classId,
+            subjectId,
+            page,
+            limit
+        });
+
+        return res.json({
+            success: true,
+            ...result
+        });
+    } catch (error) {
+        console.error('getGradeChangeRequests error:', error);
+        return res.status(500).json({ success: false, message: 'Lỗi khi lấy danh sách yêu cầu sửa điểm' });
+    }
+};
+
+/**
+ * Cấp 1: GVCN xác nhận tính hợp lệ của yêu cầu sửa điểm
+ * @route PUT /api/grades/change-requests/:id/confirm
+ */
+export const confirmGradeChangeByHomeroom = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { note } = req.body;
+
+        const updated = await GradeChangeService.confirmByHomeroom({
+            requestId: id,
+            userId: req.user.id,
+            note
+        });
+
+        return res.json({
+            success: true,
+            message: 'GVCN đã xác nhận yêu cầu thành công. Đã chuyển tiếp lên Admin/BGH phê duyệt.',
+            data: updated
+        });
+    } catch (error) {
+        console.error('confirmGradeChangeByHomeroom error:', error);
+        return res.status(400).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * Cấp 2: Admin / BGH phê duyệt sửa điểm cấp cuối
+ * @route PUT /api/grades/change-requests/:id/approve
+ */
+export const approveGradeChangeByAdmin = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { note } = req.body;
+
+        const result = await GradeChangeService.approveByAdmin({
+            requestId: id,
+            adminId: req.user.id,
+            note,
+            req
+        });
+
+        return res.json({
+            success: true,
+            message: 'Ban Giám Hiệu đã phê duyệt sửa điểm thành công. Bảng điểm đã được cập nhật tự động.',
+            data: result
+        });
+    } catch (error) {
+        console.error('approveGradeChangeByAdmin error:', error);
+        return res.status(400).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * Từ chối yêu cầu sửa điểm (GVCN hoặc Admin)
+ * @route PUT /api/grades/change-requests/:id/reject
+ */
+export const rejectGradeChange = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { reason } = req.body;
+
+        const updated = await GradeChangeService.rejectRequest({
+            requestId: id,
+            userId: req.user.id,
+            reason
+        });
+
+        return res.json({
+            success: true,
+            message: 'Đã từ chối yêu cầu sửa điểm',
+            data: updated
+        });
+    } catch (error) {
+        console.error('rejectGradeChange error:', error);
+        return res.status(400).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * Gợi ý nhận xét học bạ thông minh chuẩn Thông tư 22 (NLP / Rule Engine)
+ * @route POST /api/grades/suggest-remarks
+ */
+export const generateStudentRemark = async (req, res) => {
+    try {
+        const { studentId, classId, semester = 'HK1_2026' } = req.body;
+
+        if (studentId) {
+            const data = await ReportCardRemarkService.generateRemarkForStudent({ studentId, semester });
+            return res.json({ success: true, data });
+        }
+
+        if (classId) {
+            const data = await ReportCardRemarkService.generateRemarksForClass({ classId, semester });
+            return res.json({ success: true, data });
+        }
+
+        return res.status(400).json({
+            success: false,
+            message: 'Vui lòng cung cấp studentId (cho 1 học sinh) hoặc classId (cho cả lớp)'
+        });
+    } catch (error) {
+        console.error('generateStudentRemark error:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
 };
