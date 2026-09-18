@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import api from '../services/api';
-import { ArrowLeft, UserPlus, UserMinus, Search, Users, GraduationCap, X } from 'lucide-react';
+import { ArrowLeft, UserPlus, UserMinus, Search, Users, GraduationCap, X, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import StudentQuickViewModal from '../components/StudentQuickViewModal';
 
 const AddStudentModal = ({ isOpen, onClose, classId, onSuccess }) => {
     const [students, setStudents] = useState([]);
@@ -151,6 +152,13 @@ const ClassDetails = () => {
     const [students, setStudents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [quickViewStudent, setQuickViewStudent] = useState(null);
+    const [isQuickViewOpen, setIsQuickViewOpen] = useState(false);
+
+    const handleViewStudentDetail = (student) => {
+        setQuickViewStudent(student);
+        setIsQuickViewOpen(true);
+    };
 
     useEffect(() => {
         fetchClassDetails();
@@ -273,15 +281,34 @@ const ClassDetails = () => {
                                         </td>
                                     </tr>
                                 ) : students.map((s, index) => (
-                                    <tr key={s.id} className="hover:bg-blue-50/50 transition-colors border-b border-gray-50 last:border-0">
-                                        <td className="px-6 py-4 font-medium">{index + 1}</td>
-                                        <td className="px-6 py-4 font-medium text-gray-800">{s.studentCode}</td>
-                                        <td className="px-6 py-4 font-bold text-blue-600">{s.fullName}</td>
+                                    <tr 
+                                        key={s.id} 
+                                        onClick={() => handleViewStudentDetail(s)}
+                                        className="hover:bg-indigo-50/50 transition-colors border-b border-gray-50 last:border-0 cursor-pointer group"
+                                    >
+                                        <td className="px-6 py-4 font-medium text-slate-400">{index + 1}</td>
+                                        <td className="px-6 py-4 font-bold text-indigo-700 group-hover:underline">{s.studentCode}</td>
+                                        <td className="px-6 py-4 font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{s.fullName}</td>
                                         <td className="px-6 py-4">{s.gender}</td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button onClick={() => handleRemoveStudent(s)} className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors" title="Xóa khỏi lớp">
-                                                <UserMinus size={18} />
-                                            </button>
+                                        <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
+                                            <div className="flex items-center justify-end gap-1">
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => handleViewStudentDetail(s)} 
+                                                    className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer" 
+                                                    title="Xem chi tiết học sinh"
+                                                >
+                                                    <Eye size={18} />
+                                                </button>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => handleRemoveStudent(s)} 
+                                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer" 
+                                                    title="Xóa khỏi lớp"
+                                                >
+                                                    <UserMinus size={18} />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -299,6 +326,17 @@ const ClassDetails = () => {
                     onSuccess={fetchClassDetails}
                 />
             </AnimatePresence>
+
+            {/* Quick View Student Detail Modal */}
+            <StudentQuickViewModal
+                isOpen={isQuickViewOpen}
+                onClose={() => {
+                    setIsQuickViewOpen(false);
+                    setQuickViewStudent(null);
+                }}
+                studentId={quickViewStudent?.id}
+                initialData={quickViewStudent}
+            />
         </div>
     );
 };

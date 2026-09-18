@@ -195,7 +195,16 @@ export const login = async (req, res) => {
         }
 
         const profile = user.admin || user.teacher || user.student || user.parent;
-        const primaryRole = user.role || (user.admin ? 'admin' : (user.teacher ? 'teacher' : (user.parent ? 'parent' : 'student')));
+        let primaryRole = user.role || (user.admin ? 'admin' : (user.teacher ? 'teacher' : (user.parent ? 'parent' : 'student')));
+        
+        // Tự động đồng bộ quyền Admin nếu có profile Admin hoặc là tài khoản quản trị viên mặc định
+        if (user.admin || user.username === 'admin' || user.email === 'admin@school.edu.vn') {
+            primaryRole = 'admin';
+            if (user.role !== 'admin') {
+                user.role = 'admin';
+                prisma.user.update({ where: { id: user.id }, data: { role: 'admin' } }).catch(() => {});
+            }
+        }
         const jwtSecret = process.env.JWT_SECRET || 'supersecretkey_for_dev_only';
         
         const studentId = user.student ? user.student.id : null;
@@ -421,12 +430,20 @@ export const getMe = async (req, res) => {
         }
 
         const profile = user.admin || user.teacher || user.student || user.parent;
+        let userRole = user.role;
+        if (user.admin || user.username === 'admin' || user.email === 'admin@school.edu.vn') {
+            userRole = 'admin';
+            if (user.role !== 'admin') {
+                user.role = 'admin';
+                prisma.user.update({ where: { id: user.id }, data: { role: 'admin' } }).catch(() => {});
+            }
+        }
 
         const userData = {
             id: user.id,
             username: user.username,
             email: user.email,
-            role: user.role,
+            role: userRole,
             status: user.status,
             name: profile ? profile.fullName : user.username,
             profileId: profile ? profile.id : null,

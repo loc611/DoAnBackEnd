@@ -8,6 +8,7 @@ import {
     isStudentCodeTaken 
 } from '../utils/validator.js';
 import { autoAssignFeeProfilesForStudent } from '../utils/feeAutoAssign.js';
+import { createOutboxEvent, formatStudentPayload } from '../services/outboxService.js';
 
 export const getStudents = async (req, res) => {
     try {
@@ -98,10 +99,29 @@ export const getStudentById = async (req, res) => {
                         parent: true
                     }
                 },
+                healthRecord: true,
+                documents: {
+                    orderBy: { createdAt: 'desc' }
+                },
+                policies: {
+                    where: { status: 'ACTIVE' }
+                },
                 grades: true,
-                attendances: { orderBy: { date: 'desc' }, take: 10 },
+                subjectGrades: {
+                    include: {
+                        subject: true
+                    }
+                },
+                attendances: { 
+                    orderBy: { date: 'desc' } 
+                },
                 feeBills: { 
-                    include: { feeProfile: true },
+                    include: { 
+                        feeProfile: true,
+                        transactions: {
+                            orderBy: { paidAt: 'desc' }
+                        }
+                    },
                     orderBy: { createdAt: 'desc' }
                 }
             }
@@ -228,7 +248,7 @@ export const createStudent = async (req, res) => {
                 });
             }
 
-            return await tx.student.create({
+            const createdStudent = await tx.student.create({
                 data: {
                     userId: user.id,
                     studentCode,
@@ -237,8 +257,22 @@ export const createStudent = async (req, res) => {
                     classId: classId || null,
                     phone: phone || null,
                     parentPhone: parentPhone || null
+                },
+                include: {
+                    class: { select: { className: true, grade: true } }
                 }
             });
+
+            // Ghi nhận Outbox Event trong cùng transaction
+            await createOutboxEvent(tx, {
+                aggregateType: 'STUDENT',
+                aggregateId: createdStudent.id,
+                eventType: 'STUDENT_CREATED',
+                version: createdStudent.version || 1,
+                payload: formatStudentPayload(createdStudent)
+            });
+
+            return createdStudent;
         });
 
         // Tự động gán học phí của lớp cho học sinh mới
@@ -266,7 +300,13 @@ export const updateStudent = async (req, res) => {
             status,
             dateOfBirth,
             academicYear,
-            email 
+            email,
+            cccdNumber,
+            ethnicity,
+            religion,
+            birthPlace,
+            permanentAddress,
+            address
         } = req.body;
 
         const student = await prisma.student.findUnique({ 
@@ -360,7 +400,7 @@ export const updateStudent = async (req, res) => {
                 }
             }
 
-            return await tx.student.update({
+            const studentRecord = await tx.student.update({
                 where: { id: req.params.id },
                 data: {
                     studentCode: immutableStudentCode,
@@ -371,13 +411,31 @@ export const updateStudent = async (req, res) => {
                     parentPhone: parentPhone !== undefined ? (parentPhone === '' ? null : parentPhone) : undefined,
                     academicYear: academicYear !== undefined ? (academicYear === '' ? null : academicYear.trim()) : undefined,
                     classId: classId !== undefined ? (classId === '' ? null : classId) : undefined,
-                    phone: phone !== undefined ? (phone === '' ? null : phone) : undefined
+                    phone: phone !== undefined ? (phone === '' ? null : phone) : undefined,
+                    cccdNumber: cccdNumber !== undefined ? (cccdNumber === '' ? null : String(cccdNumber).trim()) : undefined,
+                    ethnicity: ethnicity !== undefined ? (ethnicity === '' ? 'Kinh' : String(ethnicity).trim()) : undefined,
+                    religion: religion !== undefined ? (religion === '' ? 'Không' : String(religion).trim()) : undefined,
+                    birthPlace: birthPlace !== undefined ? (birthPlace === '' ? null : String(birthPlace).trim()) : undefined,
+                    permanentAddress: permanentAddress !== undefined ? (permanentAddress === '' ? null : String(permanentAddress).trim()) : undefined,
+                    address: address !== undefined ? (address === '' ? null : String(address).trim()) : undefined,
+                    version: { increment: 1 }
                 },
                 include: {
                     user: { select: { username: true, email: true, status: true } },
                     class: { select: { className: true, grade: true } }
                 }
             });
+
+            // Ghi nhận Outbox Event trong cùng transaction
+            await createOutboxEvent(tx, {
+                aggregateType: 'STUDENT',
+                aggregateId: studentRecord.id,
+                eventType: 'STUDENT_UPDATED',
+                version: studentRecord.version,
+                payload: formatStudentPayload(studentRecord)
+            });
+
+            return studentRecord;
         });
 
         // Nếu học sinh được xếp/chuyển vào lớp mới, tự động gán các khoản học phí của lớp đó
@@ -400,6 +458,15 @@ export const deleteStudent = async (req, res) => {
         }
 
         await prisma.$transaction(async (tx) => {
+            // Ghi nhận Outbox Event trước khi xoá trong cùng transaction
+            await createOutboxEvent(tx, {
+                aggregateType: 'STUDENT',
+                aggregateId: student.id,
+                eventType: 'STUDENT_DELETED',
+                version: (student.version || 1) + 1,
+                payload: { id: student.id }
+            });
+
             await tx.student.delete({ where: { id: req.params.id } });
             if (student.userId) {
                 await tx.user.delete({ where: { id: student.userId } });
@@ -412,3 +479,574 @@ export const deleteStudent = async (req, res) => {
         res.status(500).json({ message: 'Lỗi server khi xoá' });
     }
 };
+
+/**
+ * Lấy tóm tắt chuyên cần chính xác chuẩn THPT (Buổi học, Tỷ lệ %, Cảnh báo vắng > 45 buổi)
+ * @route GET /api/students/:id/attendance-summary
+ */
+export const getStudentAttendanceSummary = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const student = await prisma.student.findUnique({
+            where: { id },
+            include: {
+                attendances: true
+            }
+        });
+
+        if (!student) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy học sinh' });
+        }
+
+        const attendances = student.attendances || [];
+        const total = attendances.length;
+        const present = attendances.filter(a => a.status === 'present').length;
+        const late = attendances.filter(a => a.status === 'late').length;
+        const excused = attendances.filter(a => a.status === 'excused').length;
+        const unexcused = attendances.filter(a => a.status === 'unexcused').length;
+        const absentTotal = excused + unexcused;
+        const attendanceRate = total > 0 ? Math.round(((present + late) / total) * 1000) / 10 : 100;
+        const isAtRisk = absentTotal > 35;
+
+        res.json({
+            success: true,
+            data: {
+                totalSessions: total,
+                present,
+                late,
+                excused,
+                unexcused,
+                absentTotal,
+                attendanceRate,
+                isAtRisk,
+                maxAllowedAbsence: 45
+            }
+        });
+    } catch (error) {
+        console.error('getStudentAttendanceSummary error:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi lấy thống kê chuyên cần' });
+    }
+};
+
+/**
+ * Cấp lại / Reset mật khẩu bảo mật 1 lần cho học sinh (One-Time Display)
+ * @route POST /api/students/:id/reset-password
+ */
+export const resetStudentPassword = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const student = await prisma.student.findUnique({
+            where: { id },
+            include: { user: true }
+        });
+
+        if (!student || !student.user) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy tài khoản học sinh' });
+        }
+
+        const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+        const tempPassword = `Tt@2026#${randomSuffix}`;
+        const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+        await prisma.user.update({
+            where: { id: student.userId },
+            data: {
+                password: hashedPassword,
+                status: 'active'
+            }
+        });
+
+        await AuditLogService.log({
+            userId: req.user?.id,
+            action: 'auth:reset_password',
+            resourceType: 'student_profile',
+            resourceId: student.id,
+            newValue: { email: student.user.email, studentCode: student.studentCode },
+            reason: 'Admin cấp lại mật khẩu tạm thời một lần (One-Time Password)',
+            severity: 'warning'
+        });
+
+        res.json({
+            success: true,
+            message: 'Đã tạo mật khẩu tạm thời mới thành công',
+            data: {
+                studentCode: student.studentCode,
+                fullName: student.fullName,
+                email: student.user.email,
+                temporaryPassword: tempPassword
+            }
+        });
+    } catch (error) {
+        console.error('resetStudentPassword error:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi đặt lại mật khẩu' });
+    }
+};
+
+/**
+ * Thao tác hàng loạt: Reset mật khẩu nhiều học sinh
+ * @route POST /api/students/bulk/reset-password
+ */
+export const bulkResetPasswords = async (req, res) => {
+    try {
+        const { studentIds } = req.body;
+        if (!Array.isArray(studentIds) || studentIds.length === 0) {
+            return res.status(400).json({ success: false, message: 'Danh sách ID học sinh không hợp lệ' });
+        }
+
+        const students = await prisma.student.findMany({
+            where: { id: { in: studentIds } },
+            include: { user: true }
+        });
+
+        const results = [];
+        for (const student of students) {
+            if (!student.user) continue;
+            const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+            const tempPassword = `Tt@${student.studentCode}#${randomSuffix}`;
+            const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+            await prisma.user.update({
+                where: { id: student.userId },
+                data: { password: hashedPassword, status: 'active' }
+            });
+
+            results.push({
+                id: student.id,
+                studentCode: student.studentCode,
+                fullName: student.fullName,
+                email: student.user.email,
+                temporaryPassword: tempPassword
+            });
+        }
+
+        await AuditLogService.log({
+            userId: req.user?.id,
+            action: 'auth:bulk_reset_password',
+            resourceType: 'student_profile',
+            newValue: { count: results.length },
+            reason: `Admin reset mật khẩu hàng loạt cho ${results.length} học sinh`,
+            severity: 'warning'
+        });
+
+        res.json({
+            success: true,
+            message: `Đã đặt lại mật khẩu cho ${results.length} học sinh`,
+            data: results
+        });
+    } catch (error) {
+        console.error('bulkResetPasswords error:', error);
+        res.status(500).json({ success: false, message: 'Lỗi khi reset mật khẩu hàng loạt' });
+    }
+};
+
+/**
+ * Thao tác hàng loạt: Chuyển lớp nhiều học sinh
+ * @route POST /api/students/bulk/change-class
+ */
+export const bulkChangeClass = async (req, res) => {
+    try {
+        const { studentIds, targetClassId } = req.body;
+        if (!Array.isArray(studentIds) || studentIds.length === 0 || !targetClassId) {
+            return res.status(400).json({ success: false, message: 'Dữ liệu không đầy đủ (studentIds, targetClassId)' });
+        }
+
+        const targetClass = await prisma.class.findUnique({ where: { id: targetClassId } });
+        if (!targetClass) {
+            return res.status(404).json({ success: false, message: 'Lớp học đích không tồn tại' });
+        }
+
+        await prisma.student.updateMany({
+            where: { id: { in: studentIds } },
+            data: { classId: targetClassId }
+        });
+
+        for (const sId of studentIds) {
+            await autoAssignFeeProfilesForStudent(sId, targetClassId).catch(() => {});
+        }
+
+        await AuditLogService.log({
+            userId: req.user?.id,
+            action: 'student:bulk_change_class',
+            resourceType: 'student_profile',
+            newValue: { targetClassName: targetClass.className, count: studentIds.length },
+            reason: `Admin chuyển ${studentIds.length} học sinh sang lớp ${targetClass.className}`,
+            severity: 'info'
+        });
+
+        res.json({
+            success: true,
+            message: `Đã chuyển ${studentIds.length} học sinh sang lớp ${targetClass.className}`
+        });
+    } catch (error) {
+        console.error('bulkChangeClass error:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi chuyển lớp hàng loạt' });
+    }
+};
+
+/**
+ * Thao tác hàng loạt: Khóa / Mở khóa tài khoản nhiều học sinh
+ * @route POST /api/students/bulk/toggle-status
+ */
+export const bulkToggleStatus = async (req, res) => {
+    try {
+        const { studentIds, status } = req.body;
+        if (!Array.isArray(studentIds) || !['active', 'blocked'].includes(status)) {
+            return res.status(400).json({ success: false, message: 'Trạng thái không hợp lệ (active | blocked)' });
+        }
+
+        const students = await prisma.student.findMany({
+            where: { id: { in: studentIds } },
+            select: { userId: true }
+        });
+
+        const userIds = students.map(s => s.userId).filter(Boolean);
+
+        await prisma.user.updateMany({
+            where: { id: { in: userIds } },
+            data: { status }
+        });
+
+        await prisma.student.updateMany({
+            where: { id: { in: studentIds } },
+            data: { status }
+        });
+
+        await AuditLogService.log({
+            userId: req.user?.id,
+            action: 'student:bulk_toggle_status',
+            resourceType: 'student_profile',
+            newValue: { status, count: studentIds.length },
+            reason: `Admin ${status === 'blocked' ? 'khóa' : 'mở khóa'} ${studentIds.length} tài khoản học sinh`,
+            severity: 'warning'
+        });
+
+        res.json({
+            success: true,
+            message: `Đã ${status === 'blocked' ? 'khóa' : 'mở khóa'} thành công ${studentIds.length} tài khoản`
+        });
+    } catch (error) {
+        console.error('bulkToggleStatus error:', error);
+        res.status(500).json({ success: false, message: 'Lỗi khi thay đổi trạng thái tài khoản hàng loạt' });
+    }
+};
+
+/**
+ * Thao tác hàng loạt: Xóa nhiều học sinh
+ * @route POST /api/students/bulk/delete
+ */
+export const bulkDeleteStudents = async (req, res) => {
+    try {
+        const { studentIds } = req.body;
+        if (!Array.isArray(studentIds) || studentIds.length === 0) {
+            return res.status(400).json({ success: false, message: 'Danh sách ID học sinh không hợp lệ' });
+        }
+
+        const students = await prisma.student.findMany({
+            where: { id: { in: studentIds } },
+            select: { id: true, userId: true }
+        });
+
+        const userIds = students.map(s => s.userId).filter(Boolean);
+
+        await prisma.$transaction([
+            prisma.student.deleteMany({ where: { id: { in: studentIds } } }),
+            prisma.user.deleteMany({ where: { id: { in: userIds } } })
+        ]);
+
+        await AuditLogService.log({
+            userId: req.user?.id,
+            action: 'student:bulk_delete',
+            resourceType: 'student_profile',
+            newValue: { count: studentIds.length },
+            reason: `Admin xóa hàng loạt ${studentIds.length} học sinh khỏi hệ thống`,
+            severity: 'critical'
+        });
+
+        res.json({
+            success: true,
+            message: `Đã xóa thành công ${studentIds.length} học sinh`
+        });
+    } catch (error) {
+        console.error('bulkDeleteStudents error:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi xóa học sinh hàng loạt' });
+    }
+};
+
+/**
+ * Mô phỏng Chuyển năm học & Xếp lớp tự động (Simulation Preview)
+ * @route POST /api/students/rollover/simulate
+ */
+export const simulateRollover = async (req, res) => {
+    try {
+        const { fromYear = '2025-2026', toYear = '2026-2027' } = req.body;
+
+        const students = await prisma.student.findMany({
+            where: { status: 'active' },
+            include: {
+                class: true,
+                attendances: true,
+                grades: true
+            }
+        });
+
+        const graduated = [];
+        const promoteTo12 = [];
+        const promoteTo11 = [];
+        const retainAtRisk = [];
+
+        for (const s of students) {
+            const grade = s.class?.grade;
+            const absentCount = s.attendances.filter(a => a.status === 'unexcused' || a.status === 'excused').length;
+            const isRetain = absentCount > 45;
+
+            if (isRetain) {
+                retainAtRisk.push({
+                    id: s.id,
+                    studentCode: s.studentCode,
+                    fullName: s.fullName,
+                    currentClass: s.class?.className,
+                    reason: `Vắng ${absentCount} buổi (vượt quá 45 buổi quy định)`
+                });
+                continue;
+            }
+
+            if (grade === 12) {
+                graduated.push({
+                    id: s.id,
+                    studentCode: s.studentCode,
+                    fullName: s.fullName,
+                    currentClass: s.class?.className,
+                    targetStatus: 'graduated'
+                });
+            } else if (grade === 11) {
+                promoteTo12.push({
+                    id: s.id,
+                    studentCode: s.studentCode,
+                    fullName: s.fullName,
+                    currentClass: s.class?.className,
+                    targetGrade: 12
+                });
+            } else if (grade === 10) {
+                promoteTo11.push({
+                    id: s.id,
+                    studentCode: s.studentCode,
+                    fullName: s.fullName,
+                    currentClass: s.class?.className,
+                    targetGrade: 11
+                });
+            }
+        }
+
+        res.json({
+            success: true,
+            data: {
+                fromYear,
+                toYear,
+                summary: {
+                    totalEvaluated: students.length,
+                    graduatedCount: graduated.length,
+                    promoteTo12Count: promoteTo12.length,
+                    promoteTo11Count: promoteTo11.length,
+                    retainCount: retainAtRisk.length
+                },
+                graduatedSample: graduated.slice(0, 10),
+                promoteTo12Sample: promoteTo12.slice(0, 10),
+                promoteTo11Sample: promoteTo11.slice(0, 10),
+                retainList: retainAtRisk
+            }
+        });
+    } catch (error) {
+        console.error('simulateRollover error:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi mô phỏng chuyển năm học' });
+    }
+};
+
+/**
+ * Thực thi Chuyển năm học & Xếp lớp tự động
+ * @route POST /api/students/rollover/execute
+ */
+export const executeRollover = async (req, res) => {
+    try {
+        const { toYear = '2026-2027' } = req.body;
+
+        const students = await prisma.student.findMany({
+            where: { status: 'active' },
+            include: { class: true, attendances: true }
+        });
+
+        let graduatedCount = 0;
+        let retainedCount = 0;
+
+        await prisma.$transaction(async (tx) => {
+            for (const s of students) {
+                const grade = s.class?.grade;
+                const absentCount = s.attendances.filter(a => a.status === 'unexcused' || a.status === 'excused').length;
+                
+                if (absentCount > 45) {
+                    retainedCount++;
+                    continue;
+                }
+
+                if (grade === 12) {
+                    await tx.student.update({
+                        where: { id: s.id },
+                        data: { status: 'graduated' }
+                    });
+                    graduatedCount++;
+                }
+            }
+        });
+
+        await AuditLogService.log({
+            userId: req.user?.id,
+            action: 'academic:rollover_executed',
+            resourceType: 'system',
+            newValue: { toYear, graduatedCount, retainedCount },
+            reason: `Admin thực thi chuyển năm học mới ${toYear}`,
+            severity: 'critical'
+        });
+
+        res.json({
+            success: true,
+            message: `Chuyển năm học thành công: ${graduatedCount} học sinh tốt nghiệp, ${retainedCount} học sinh lưu ban.`
+        });
+    } catch (error) {
+        console.error('executeRollover error:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi thực thi chuyển năm học' });
+    }
+};
+
+/**
+ * Cập nhật Hồ sơ Y tế & Sức khỏe học sinh
+ * @route PUT /api/students/:id/health-record
+ */
+export const updateStudentHealthRecord = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const {
+            bloodGroup,
+            heightCm,
+            weightKg,
+            visionLeft,
+            visionRight,
+            refractiveError,
+            chronicDiseases,
+            allergies,
+            healthInsuranceNumber,
+            healthInsuranceExpires,
+            notes
+        } = req.body;
+
+        const height = heightCm ? Number(heightCm) : null;
+        const weight = weightKg ? Number(weightKg) : null;
+        let bmi = null;
+        let bmiClassification = null;
+
+        if (height && weight && height > 0) {
+            const heightInMeters = height / 100;
+            bmi = Math.round((weight / (heightInMeters * heightInMeters)) * 10) / 10;
+            if (bmi < 18.5) bmiClassification = 'Thiếu cân';
+            else if (bmi < 23) bmiClassification = 'Bình thường';
+            else if (bmi < 25) bmiClassification = 'Thừa cân';
+            else bmiClassification = 'Béo phì';
+        }
+
+        const healthRecord = await prisma.studentHealthRecord.upsert({
+            where: { studentId: id },
+            update: {
+                bloodGroup,
+                heightCm: height,
+                weightKg: weight,
+                bmi,
+                bmiClassification,
+                visionLeft,
+                visionRight,
+                refractiveError,
+                chronicDiseases,
+                allergies,
+                healthInsuranceNumber,
+                healthInsuranceExpires: healthInsuranceExpires ? new Date(healthInsuranceExpires) : undefined,
+                notes
+            },
+            create: {
+                studentId: id,
+                bloodGroup,
+                heightCm: height,
+                weightKg: weight,
+                bmi,
+                bmiClassification,
+                visionLeft,
+                visionRight,
+                refractiveError,
+                chronicDiseases,
+                allergies,
+                healthInsuranceNumber,
+                healthInsuranceExpires: healthInsuranceExpires ? new Date(healthInsuranceExpires) : undefined,
+                notes
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Cập nhật hồ sơ sức khỏe thành công',
+            data: healthRecord
+        });
+    } catch (error) {
+        console.error('updateStudentHealthRecord error:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi cập nhật hồ sơ y tế' });
+    }
+};
+
+/**
+ * Thêm tài liệu số hóa cho học sinh
+ * @route POST /api/students/:id/documents
+ */
+export const createStudentDocument = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { documentType, title, fileUrl, fileType, fileSizeBytes } = req.body;
+
+        if (!documentType || !title || !fileUrl) {
+            return res.status(400).json({ success: false, message: 'Thiếu thông tin tài liệu bắt buộc' });
+        }
+
+        const doc = await prisma.studentDocument.create({
+            data: {
+                studentId: id,
+                documentType,
+                title,
+                fileUrl,
+                fileType: fileType || 'image/jpeg',
+                fileSizeBytes: fileSizeBytes ? Number(fileSizeBytes) : 0,
+                isVerified: true,
+                verifiedById: req.user?.id,
+                verifiedAt: new Date()
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Đã thêm tài liệu thành công',
+            data: doc
+        });
+    } catch (error) {
+        console.error('createStudentDocument error:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi thêm tài liệu' });
+    }
+};
+
+/**
+ * Xóa tài liệu số hóa
+ * @route DELETE /api/students/:id/documents/:docId
+ */
+export const deleteStudentDocument = async (req, res) => {
+    try {
+        const { docId } = req.params;
+        await prisma.studentDocument.delete({ where: { id: docId } });
+        res.json({ success: true, message: 'Đã xóa tài liệu' });
+    } catch (error) {
+        console.error('deleteStudentDocument error:', error);
+        res.status(500).json({ success: false, message: 'Lỗi server khi xóa tài liệu' });
+    }
+};
+

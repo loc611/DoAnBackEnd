@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Plus, Edit, X, DollarSign, Wallet, CreditCard, PieChart, Users, CheckCircle, Printer, Layers, ShieldCheck, Trash2 } from 'lucide-react';
 import api from '../services/api';
@@ -765,18 +766,30 @@ const Tuition = () => {
         }
     };
 
-    useEffect(() => {
-        fetchData();
-        fetchClasses();
-    }, [filterYear, filterSemester]);
+    const navigate = useNavigate();
+    const currentUserRole = (localStorage.getItem('userRole') || '').toLowerCase();
 
     useEffect(() => {
+        if (currentUserRole === 'student') {
+            navigate('/student/tuition', { replace: true });
+        }
+    }, [currentUserRole, navigate]);
+
+    useEffect(() => {
+        if (currentUserRole === 'student') return;
+        fetchData();
+        fetchClasses();
+    }, [filterYear, filterSemester, currentUserRole]);
+
+    useEffect(() => {
+        if (currentUserRole === 'student') return;
         if (activeTab === 'classTracking' && selectedClassId) {
             fetchClassTuition(selectedClassId);
         }
-    }, [selectedClassId, filterYear, filterSemester, activeTab]);
+    }, [selectedClassId, filterYear, filterSemester, activeTab, currentUserRole]);
 
     const fetchData = async () => {
+        if (currentUserRole === 'student') return;
         try {
             setLoading(true);
             const [summaryRes, profilesRes] = await Promise.all([

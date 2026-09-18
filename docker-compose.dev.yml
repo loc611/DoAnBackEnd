@@ -19,10 +19,64 @@ services:
       - JWT_SECRET=${JWT_SECRET:-supersecretkey_for_dev_only}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-supersecretkey_refresh_dev}
       - GOOGLE_SHEET_WEBHOOK_URL=${GOOGLE_SHEET_WEBHOOK_URL:-}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL:-http://elasticsearch:9200}
+      - ELASTICSEARCH_STUDENT_INDEX=${ELASTICSEARCH_STUDENT_INDEX:-students_v1}
     volumes:
       - ./backend:/app
       - /app/node_modules
     command: ["npm", "run", "dev"]
+    depends_on:
+      - rabbitmq
+      - elasticsearch
+    networks:
+      - school_dev_net
+
+  sync_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: school_sync_worker_dev
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=${DATABASE_URL:-postgresql://neondb_owner:npg_IKecRfm4o6gZ@ep-aged-silence-azt04b35-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672}
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL:-http://elasticsearch:9200}
+      - ELASTICSEARCH_STUDENT_INDEX=${ELASTICSEARCH_STUDENT_INDEX:-students_v1}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: ["npm", "run", "worker"]
+    depends_on:
+      - rabbitmq
+      - elasticsearch
+    networks:
+      - school_dev_net
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: school_rabbitmq_dev
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    networks:
+      - school_dev_net
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: school_elasticsearch_dev
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     networks:
       - school_dev_net
 

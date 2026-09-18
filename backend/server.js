@@ -23,10 +23,14 @@ import policyRoutes from './routes/policyRoutes.js';
 import alertRoutes from './routes/alertRoutes.js';
 import lessonLogRoutes from './routes/lessonLogRoutes.js';
 import petitionRoutes from './routes/petitionRoutes.js';
+import searchRoutes from './routes/searchRoutes.js';
+import departmentRoutes from './routes/departmentRoutes.js';
+import teachingAssignmentRoutes from './routes/teachingAssignmentRoutes.js';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { initDefaultUsers } from './utils/initDefaultUsers.js';
 import { seedRbacScopeData } from './utils/seedRbacScope.js';
+import { applyPendingMigrations } from './scripts/apply_pending_migrations.js';
 
 dotenv.config();
 
@@ -92,12 +96,16 @@ app.use('/api/settings', systemSettingRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/transfers', transferRoutes);
 app.use('/api/teacher', teacherRoutes);
+app.use('/api/teachers', teacherRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/teaching-assignments', teachingAssignmentRoutes);
 app.use('/api/student', studentPortalRoutes);
 app.use('/api/import-export', importExportRoutes);
 app.use('/api/policies', policyRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/lesson-logs', lessonLogRoutes);
 app.use('/api/petitions', petitionRoutes);
+app.use('/api/search', searchRoutes);
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running with PostgreSQL (Prisma) and RBAC+Scope Engine' });
@@ -114,6 +122,7 @@ const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
     try {
+        await applyPendingMigrations();
         await initDefaultUsers();
         await seedRbacScopeData();
     } catch (e) {

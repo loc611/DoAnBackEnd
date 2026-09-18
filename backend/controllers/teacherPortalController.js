@@ -33,9 +33,9 @@ export const getTeacherProfileContext = async (req, res) => {
                         }
                     }
                 },
-                TeacherAssignment: {
+                teacherAssignments: {
                     include: {
-                        Class: {
+                        class: {
                             select: {
                                 id: true,
                                 className: true,
@@ -46,7 +46,7 @@ export const getTeacherProfileContext = async (req, res) => {
                                 }
                             }
                         },
-                        Subject: {
+                        subject: {
                             select: {
                                 id: true,
                                 subjectCode: true,
@@ -110,7 +110,7 @@ export const getTeacherProfileContext = async (req, res) => {
                 const hrAssign = await prisma.homeroomAssignment.findFirst({
                     where: { teacherId: teacher.id },
                     include: {
-                        Class: {
+                        class: {
                             select: {
                                 id: true,
                                 className: true,
@@ -123,13 +123,13 @@ export const getTeacherProfileContext = async (req, res) => {
                         }
                     }
                 });
-                if (hrAssign?.Class) {
+                if (hrAssign?.class) {
                     homeroomClass = {
-                        classId: hrAssign.Class.id,
-                        className: hrAssign.Class.className,
-                        gradeLevel: hrAssign.Class.grade,
-                        academicYear: hrAssign.Class.academicYear,
-                        totalStudents: hrAssign.Class._count?.students || 0
+                        classId: hrAssign.class.id,
+                        className: hrAssign.class.className,
+                        gradeLevel: hrAssign.class.grade,
+                        academicYear: hrAssign.class.academicYear,
+                        totalStudents: hrAssign.class._count?.students || 0
                     };
                 }
             } catch (err) {
@@ -139,19 +139,19 @@ export const getTeacherProfileContext = async (req, res) => {
 
         // 3. Chuẩn hóa danh sách lớp phân công bộ môn
         const assignedClasses = [];
-        if (teacher.TeacherAssignment && teacher.TeacherAssignment.length > 0) {
-            teacher.TeacherAssignment.forEach(assign => {
-                if (assign.Class && assign.Subject) {
+        if (teacher.teacherAssignments && teacher.teacherAssignments.length > 0) {
+            teacher.teacherAssignments.forEach(assign => {
+                if (assign.class && assign.subject) {
                     assignedClasses.push({
                         assignmentId: assign.id,
-                        classId: assign.Class.id,
-                        className: assign.Class.className,
-                        gradeLevel: assign.Class.grade,
-                        academicYear: assign.Class.academicYear,
-                        totalStudents: assign.Class._count?.students || 0,
-                        subjectId: assign.Subject.id,
-                        subjectCode: assign.Subject.subjectCode,
-                        subjectName: assign.Subject.name
+                        classId: assign.class.id,
+                        className: assign.class.className,
+                        gradeLevel: assign.class.grade,
+                        academicYear: assign.class.academicYear,
+                        totalStudents: assign.class._count?.students || 0,
+                        subjectId: assign.subject.id,
+                        subjectCode: assign.subject.subjectCode,
+                        subjectName: assign.subject.name
                     });
                 }
             });
@@ -218,3 +218,331 @@ export const getTeacherProfileContext = async (req, res) => {
         });
     }
 };
+
+/**
+ * GET /api/teachers/:id
+ * Lấy toàn bộ hồ sơ chi tiết giáo viên (cho BGH, Admin, Giáo viên)
+ * Hỗ trợ tra cứu linh hoạt bằng: teacherCode (vd: GV007), Teacher UUID, hoặc User UUID
+ */
+export const getTeacherDetails = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userRole = (req.user?.role || '').toLowerCase();
+        const isManagement = userRole === 'admin' || userRole === 'principal' || userRole === 'teacher';
+
+        if (!isManagement) {
+            return res.status(403).json({
+                success: false,
+                message: 'Bạn không có quyền truy cập thông tin chi tiết giáo viên'
+            });
+        }
+
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+        let teacher = await prisma.teacher.findFirst({
+            where: isUUID
+                ? { OR: [{ id }, { userId: id }, { teacherCode: id }] }
+                : { teacherCode: id },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        username: true,
+                        email: true,
+                        role: true,
+                        status: true,
+                        createdAt: true,
+                        userRoles: {
+                            include: {
+                                role: true
+                            }
+                        }
+                    }
+                },
+                department: {
+                    select: {
+                        id: true,
+                        code: true,
+                        name: true,
+                        description: true
+                    }
+                },
+                contracts: {
+                    orderBy: { startDate: 'desc' }
+                },
+                evaluations: {
+                    orderBy: { academicYear: 'desc' }
+                },
+                documents: {
+                    orderBy: { uploadedAt: 'desc' }
+                },
+                substituteClasses: {
+                    take: 10,
+                    orderBy: { date: 'desc' },
+                    include: {
+                        originalTeacher: { select: { id: true, fullName: true, teacherCode: true } },
+                        class: { select: { id: true, className: true } }
+                    }
+                },
+                originalClasses: {
+                    take: 10,
+                    orderBy: { date: 'desc' },
+                    include: {
+                        substituteTeacher: { select: { id: true, fullName: true, teacherCode: true } },
+                        class: { select: { id: true, className: true } }
+                    }
+                },
+                homeroomClasses: {
+                    select: {
+                        id: true,
+                        className: true,
+                        grade: true,
+                        academicYear: true,
+                        status: true,
+                        _count: {
+                            select: { students: true }
+                        }
+                    }
+                },
+                teacherAssignments: {
+                    include: {
+                        class: {
+                            select: {
+                                id: true,
+                                className: true,
+                                grade: true,
+                                academicYear: true,
+                                _count: { select: { students: true } }
+                            }
+                        },
+                        subject: {
+                            select: {
+                                id: true,
+                                subjectCode: true,
+                                name: true,
+                                periodsPerWeek: true,
+                                type: true
+                            }
+                        },
+                        schoolYear: true
+                    }
+                },
+                subjects: {
+                    select: {
+                        id: true,
+                        subjectCode: true,
+                        name: true,
+                        periodsPerWeek: true
+                    }
+                },
+                lessonLogs: {
+                    take: 15,
+                    orderBy: { date: 'desc' },
+                    include: {
+                        class: {
+                            select: { id: true, className: true, grade: true }
+                        },
+                        subject: {
+                            select: { id: true, name: true, subjectCode: true }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Nếu chưa tìm thấy và tham số là UUID, thử tìm theo User role=teacher
+        if (!teacher && isUUID) {
+            const user = await prisma.user.findFirst({
+                where: { id, role: 'teacher' },
+                include: { teacher: true }
+            });
+            if (user?.teacher) {
+                return getTeacherDetails({ ...req, params: { id: user.teacher.id } }, res);
+            }
+        }
+
+        if (!teacher) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy giáo viên trong hệ thống'
+            });
+        }
+
+        // Lấy lịch giảng dạy (Schedules) của các lớp được phân công hoặc chủ nhiệm
+        const assignedClassIds = Array.from(new Set([
+            ...(teacher.teacherAssignments?.map(a => a.classId) || []),
+            ...(teacher.homeroomClasses?.map(c => c.id) || [])
+        ]));
+
+        let schedules = [];
+        if (assignedClassIds.length > 0) {
+            schedules = await prisma.schedule.findMany({
+                where: {
+                    classId: { in: assignedClassIds }
+                },
+                include: {
+                    class: {
+                        select: { id: true, className: true, grade: true }
+                    }
+                }
+            });
+        }
+
+        // Đếm tổng số tiết dạy dự kiến / tuần
+        let totalPeriodsPerWeek = 0;
+        teacher.teacherAssignments?.forEach(a => {
+            totalPeriodsPerWeek += (a.periodsPerWeek || a.subject?.periodsPerWeek || 2);
+        });
+
+        const actualQuota = Math.max(0, (teacher.baseQuotas || 17) - (teacher.quotaReduction || 0));
+        const deltaPeriods = totalPeriodsPerWeek - actualQuota;
+
+        return res.json({
+            success: true,
+            data: {
+                ...teacher,
+                schedules,
+                totalPeriodsPerWeek,
+                actualQuota,
+                deltaPeriods
+            }
+        });
+    } catch (error) {
+        console.error('Lỗi khi lấy chi tiết giáo viên:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi hệ thống khi tải thông tin chi tiết giáo viên'
+        });
+    }
+};
+
+/**
+ * POST /api/teachers/:id/evaluations
+ * Thêm hoặc cập nhật kết quả đánh giá chuẩn nghề nghiệp (Thông tư 20/2018/TT-BGDĐT)
+ */
+export const addTeacherEvaluation = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { academicYear = '2025-2026', ratingLevel = 'TOT', criteriaScores, initiatives, initiativeTier, commendations } = req.body;
+
+        const teacher = await prisma.teacher.findUnique({ where: { id } });
+        if (!teacher) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy giáo viên' });
+        }
+
+        const evaluation = await prisma.teacherEvaluation.upsert({
+            where: {
+                teacherId_academicYear: {
+                    teacherId: id,
+                    academicYear
+                }
+            },
+            update: {
+                ratingLevel,
+                criteriaScores: criteriaScores || {},
+                initiatives: initiatives || null,
+                initiativeTier: initiativeTier || null,
+                commendations: commendations || null,
+                evaluatedById: req.user?.id
+            },
+            create: {
+                teacherId: id,
+                academicYear,
+                ratingLevel,
+                criteriaScores: criteriaScores || {},
+                initiatives: initiatives || null,
+                initiativeTier: initiativeTier || null,
+                commendations: commendations || null,
+                evaluatedById: req.user?.id
+            }
+        });
+
+        res.json({ success: true, data: evaluation, message: 'Đã lưu đánh giá chuẩn nghề nghiệp' });
+    } catch (error) {
+        console.error('Lỗi khi lưu đánh giá chuẩn nghề nghiệp:', error);
+        res.status(500).json({ success: false, message: 'Không thể lưu đánh giá giáo viên' });
+    }
+};
+
+/**
+ * POST /api/teachers/:id/documents
+ * Thêm tài liệu số hóa cho hồ sơ giáo viên
+ */
+export const addTeacherDocument = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { documentType = 'OTHER', title, fileUrl, fileSizeBytes } = req.body;
+
+        if (!title || !fileUrl) {
+            return res.status(400).json({ success: false, message: 'Tiêu đề và đường dẫn file là bắt buộc' });
+        }
+
+        const teacher = await prisma.teacher.findUnique({ where: { id } });
+        if (!teacher) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy giáo viên' });
+        }
+
+        const doc = await prisma.teacherDocument.create({
+            data: {
+                teacherId: id,
+                documentType,
+                title,
+                fileUrl,
+                fileSizeBytes: fileSizeBytes || 1024,
+                isVerified: true,
+                verifiedById: req.user?.id
+            }
+        });
+
+        res.json({ success: true, data: doc, message: 'Lưu tài liệu thành công' });
+    } catch (error) {
+        console.error('Lỗi khi lưu tài liệu:', error);
+        res.status(500).json({ success: false, message: 'Không thể lưu tài liệu' });
+    }
+};
+
+/**
+ * PUT /api/teachers/:id/profile
+ * Cập nhật thông tin hồ sơ nhân sự (CCCD, Ngân hàng, Địa chỉ, Định mức)
+ */
+export const updateTeacherProfile = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { 
+            fullName, phone, specialization, position, departmentId,
+            nationalIdCard, address, bankAccountNumber, bankName, bankBranch,
+            academicDegree, baseQuotas, quotaReduction, reductionReason,
+            teacherType, workStatus
+        } = req.body;
+
+        const updateData = {};
+        if (fullName !== undefined) updateData.fullName = fullName;
+        if (phone !== undefined) updateData.phone = phone;
+        if (specialization !== undefined) updateData.specialization = specialization;
+        if (position !== undefined) updateData.position = position;
+        if (departmentId !== undefined) updateData.departmentId = departmentId || null;
+        if (nationalIdCard !== undefined) updateData.nationalIdCard = nationalIdCard;
+        if (address !== undefined) updateData.address = address;
+        if (bankAccountNumber !== undefined) updateData.bankAccountNumber = bankAccountNumber;
+        if (bankName !== undefined) updateData.bankName = bankName;
+        if (bankBranch !== undefined) updateData.bankBranch = bankBranch;
+        if (academicDegree !== undefined) updateData.academicDegree = academicDegree;
+        if (teacherType !== undefined) updateData.teacherType = teacherType;
+        if (workStatus !== undefined) updateData.workStatus = workStatus;
+        if (baseQuotas !== undefined) updateData.baseQuotas = parseInt(baseQuotas, 10) || 17;
+        if (quotaReduction !== undefined) updateData.quotaReduction = parseInt(quotaReduction, 10) || 0;
+        if (reductionReason !== undefined) updateData.reductionReason = reductionReason;
+
+        const updated = await prisma.teacher.update({
+            where: { id },
+            data: updateData
+        });
+
+        res.json({ success: true, data: updated, message: 'Cập nhật hồ sơ thành công' });
+    } catch (error) {
+        console.error('Lỗi khi cập nhật hồ sơ giáo viên:', error);
+        res.status(500).json({ success: false, message: 'Không thể cập nhật hồ sơ' });
+    }
+};
+
+

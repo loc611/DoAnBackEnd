@@ -5,13 +5,17 @@ import {
     updateUser, 
     updateStatus, 
     resetPassword, 
-    deleteUser 
+    deleteUser,
+    bulkActionTeachers
 } from '../controllers/userController.js';
 import { protect, authorize } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
 router.use(protect);
+
+// Thao tác hàng loạt giáo viên (Chuyển tổ, Khóa/Mở, Reset MK, Gửi thông báo)
+router.post('/teachers/bulk-action', authorize('admin', 'principal'), bulkActionTeachers);
 
 // Quản Khoa (Teacher có chức vụ Quản Khoa/BGH) và Admin được xem và cập nhật trạng thái (Khóa/Đình chỉ)
 router.get('/', authorize('admin', 'teacher'), getUsers);

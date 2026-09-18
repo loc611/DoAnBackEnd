@@ -28,6 +28,13 @@ export const getUsers = async (req, res) => {
                 admin: true,
                 teacher: {
                     include: {
+                        department: {
+                            select: { id: true, name: true, code: true }
+                        },
+                        contracts: {
+                            take: 1,
+                            orderBy: { startDate: 'desc' }
+                        },
                         homeroomClasses: {
                             select: { id: true, className: true, grade: true }
                         }
@@ -503,3 +510,137 @@ export const deleteUser = async (req, res) => {
         res.status(400).json({ message: 'Lỗi khi xóa tài khoản' });
     }
 };
+
+/**
+ * POST /api/users/teachers/bulk-action
+ * Thao tác hàng loạt cho giáo viên: chuyển tổ, khóa/mở, reset mật khẩu, gửi thông báo
+ */
+export const bulkActionTeachers = async (req, res) => {
+    try {
+        const { action, userIds = [], teacherIds = [], targetDepartmentId, reason, password, title, content } = req.body;
+
+        if ((!userIds.length && !teacherIds.length) || !action) {
+            return res.status(400).json({ success: false, message: 'Thiếu danh sách tài khoản hoặc hành động cần thực hiện' });
+        }
+
+        let targetUsers = [];
+        if (userIds.length > 0) {
+            targetUsers = await prisma.user.findMany({
+                where: { id: { in: userIds } },
+                include: { teacher: true }
+            });
+        } else if (teacherIds.length > 0) {
+            targetUsers = await prisma.user.findMany({
+                where: { teacher: { id: { in: teacherIds } } },
+                include: { teacher: true }
+            });
+        }
+
+        const validTeacherIds = targetUsers.map(u => u.teacher?.id).filter(Boolean);
+        const validUserIds = targetUsers.map(u => u.id);
+
+        let resultMessage = '';
+
+        if (action === 'change_department') {
+            if (!targetDepartmentId) {
+                return res.status(400).json({ success: false, message: 'Vui lòng chọn Tổ chuyên môn đích' });
+            }
+            const dept = await prisma.department.findUnique({ where: { id: targetDepartmentId } });
+            if (!dept) {
+                return res.status(404).json({ success: false, message: 'Tổ chuyên môn không tồn tại' });
+            }
+
+            await prisma.teacher.updateMany({
+                where: { id: { in: validTeacherIds } },
+                data: { departmentId: targetDepartmentId }
+            });
+
+            resultMessage = `Đã điều chuyển ${validTeacherIds.length} giáo viên sang ${dept.name}`;
+            
+            await AuditLogService.log({
+                userId: req.user.id,
+                action: 'TEACHER_BULK_CHANGE_DEPARTMENT',
+                module: 'teacher',
+                resource: 'Teacher',
+                resourceId: targetDepartmentId,
+                newData: { teacherCount: validTeacherIds.length, targetDepartment: dept.name },
+                reason: reason || `Điều chuyển hàng loạt sang ${dept.name}`,
+                req,
+                severity: 'info'
+            }).catch(e => console.warn(e));
+
+        } else if (action === 'lock_accounts' || action === 'unlock_accounts') {
+            const newStatus = action === 'lock_accounts' ? 'blocked' : 'active';
+            const actionText = action === 'lock_accounts' ? 'Khóa' : 'Mở khóa';
+
+            const filteredUserIds = validUserIds.filter(id => id !== req.user.id);
+
+            await prisma.user.updateMany({
+                where: { id: { in: filteredUserIds } },
+                data: { status: newStatus }
+            });
+
+            resultMessage = `Đã ${actionText.toLowerCase()} thành công ${filteredUserIds.length} tài khoản`;
+
+            await AuditLogService.log({
+                userId: req.user.id,
+                action: `USER_BULK_${newStatus.toUpperCase()}`,
+                module: 'auth',
+                resource: 'User',
+                newData: { count: filteredUserIds.length, status: newStatus },
+                reason: reason || `${actionText} hàng loạt tài khoản`,
+                req,
+                severity: newStatus === 'blocked' ? 'critical' : 'info'
+            }).catch(e => console.warn(e));
+
+        } else if (action === 'reset_passwords') {
+            const newPass = password || '1111';
+            const hashedPassword = await bcrypt.hash(newPass, 10);
+
+            await prisma.user.updateMany({
+                where: { id: { in: validUserIds } },
+                data: { password: hashedPassword }
+            });
+
+            resultMessage = `Đã đặt lại mật khẩu cho ${validUserIds.length} tài khoản`;
+
+            await AuditLogService.log({
+                userId: req.user.id,
+                action: 'USER_BULK_RESET_PASSWORD',
+                module: 'auth',
+                resource: 'User',
+                newData: { count: validUserIds.length },
+                reason: reason || 'Đặt lại mật khẩu hàng loạt',
+                req,
+                severity: 'warning'
+            }).catch(e => console.warn(e));
+
+        } else if (action === 'send_notifications') {
+            if (!title || !content) {
+                return res.status(400).json({ success: false, message: 'Tiêu đề và nội dung thông báo là bắt buộc' });
+            }
+
+            const notiPromises = validUserIds.map(uId => 
+                prisma.notification.create({
+                    data: {
+                        title,
+                        content,
+                        type: 'Thông báo giáo viên',
+                        createdById: req.user.id
+                    }
+                })
+            );
+            await Promise.all(notiPromises);
+
+            resultMessage = `Đã gửi thông báo tới ${validUserIds.length} giáo viên`;
+        } else {
+            return res.status(400).json({ success: false, message: 'Hành động không hợp lệ' });
+        }
+
+        res.json({ success: true, message: resultMessage });
+    } catch (error) {
+        console.error('Lỗi khi thực hiện thao tác hàng loạt:', error);
+        res.status(500).json({ success: false, message: 'Không thể thực thi thao tác hàng loạt' });
+    }
+};
+

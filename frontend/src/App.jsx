@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Students from './pages/Students';
 import StudentProfile from './pages/StudentProfile';
 import Teachers from './pages/Teachers';
+import TeacherProfile from './pages/TeacherProfile';
 import Subjects from './pages/Subjects';
 import Classes from './pages/Classes';
 import ClassDetails from './pages/ClassDetails';
@@ -28,6 +29,7 @@ import StudentExamSchedule from './pages/StudentExamSchedule';
 import Profile from './pages/Profile';
 import LessonLogbook from './pages/LessonLogbook';
 import Petitions from './pages/Petitions';
+import AuditLogs from './pages/AuditLogs';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
@@ -54,6 +56,7 @@ function App() {
                 <Route path="students" element={<Students />} />
                 <Route path="students/:id" element={<StudentProfile />} />
                 <Route path="teachers" element={<Teachers />} />
+                <Route path="teachers/:id" element={<TeacherProfile />} />
                 <Route path="classes" element={<Classes />} />
                 <Route path="classes/:id" element={<ClassDetails />} />
                 <Route path="subjects" element={<Subjects />} />
@@ -66,6 +69,7 @@ function App() {
                 <Route path="lesson-logs" element={<LessonLogbook />} />
                 <Route path="petitions" element={<Petitions />} />
                 <Route path="settings" element={<Settings />} />
+                <Route path="audit-logs" element={<AuditLogs />} />
 
                 {/* Teacher Specific Routes */}
                 <Route path="teacher/homeroom" element={<HomeroomClass />} />
