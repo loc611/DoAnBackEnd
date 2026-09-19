@@ -5,7 +5,7 @@ import {
   FileSpreadsheet, Download, Upload, Settings, 
   Copy, Check, ExternalLink, RefreshCw, HelpCircle, CheckCircle2, AlertCircle,
   Lock, Calendar, Users, PhoneCall, GraduationCap,
-  Key, ArrowUpDown, ChevronLeft, ChevronRight, CheckSquare, Square, UserX, UserCheck2, Sparkles, Filter
+  Key, ArrowUpDown, ChevronLeft, ChevronRight, CheckSquare, Square, UserX, UserCheck2, Sparkles, Filter, RotateCcw
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
@@ -1009,6 +1009,24 @@ const Students = () => {
     }
   };
 
+  // Trạng thái kiểm tra có bộ lọc nào đang được áp dụng
+  const isFilterActive = Boolean(
+    searchTerm.trim() || 
+    selectedGrade !== 'all' || 
+    selectedFilterClass !== 'all' || 
+    selectedStatus !== 'all' || 
+    selectedGender !== 'all'
+  );
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setSelectedGrade('all');
+    setSelectedFilterClass('all');
+    setSelectedStatus('all');
+    setSelectedGender('all');
+    setCurrentPage(1);
+  };
+
   // Lọc danh sách học sinh
   const filteredStudents = students.filter(s => {
     const term = searchTerm.toLowerCase().trim();
@@ -1023,9 +1041,11 @@ const Students = () => {
 
     const matchClass = selectedFilterClass === 'all' || s.classId === selectedFilterClass;
 
+    const rawStatus = (s.status || 'active').toLowerCase();
     const matchStatus = selectedStatus === 'all' || 
-      (s.status === selectedStatus) || 
-      (selectedStatus === 'active' && (!s.status || s.status === 'active'));
+      (selectedStatus === 'active' 
+        ? (!s.status || rawStatus === 'active') 
+        : rawStatus === selectedStatus.toLowerCase());
 
     const matchGender = selectedGender === 'all' || s.gender === selectedGender;
 
@@ -1337,9 +1357,26 @@ const Students = () => {
         <div>
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold text-gray-800">Quản lý Học sinh</h2>
-            <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-200">
-              {totalItems} Học sinh
-            </span>
+            {isFilterActive ? (
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-full border border-amber-200 flex items-center gap-1.5 shadow-xs">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                  Đang lọc: {totalItems} / {students.length} Học sinh
+                </span>
+                <button 
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="text-xs text-rose-600 hover:text-rose-700 hover:underline font-semibold cursor-pointer"
+                  title="Xóa nhanh các bộ lọc đang chọn"
+                >
+                  (Xóa bộ lọc)
+                </button>
+              </div>
+            ) : (
+              <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full border border-blue-200">
+                {totalItems} Học sinh
+              </span>
+            )}
           </div>
           <p className="text-sm text-gray-500 mt-1">Danh sách hồ sơ, tác vụ hàng loạt và chuyển năm học tự động</p>
         </div>
@@ -1464,6 +1501,19 @@ const Students = () => {
                 <option value="Nam">Nam</option>
                 <option value="Nữ">Nữ</option>
               </select>
+
+              {/* Reset Filters Button */}
+              {isFilterActive && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 text-sm font-semibold transition-all shadow-sm cursor-pointer active:scale-95"
+                  title="Đặt lại tất cả bộ lọc về mặc định"
+                >
+                  <RotateCcw size={15} />
+                  <span>Xóa bộ lọc</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1533,6 +1583,16 @@ const Students = () => {
                       <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 opacity-30" />
                       <p className="font-semibold text-gray-700">Không tìm thấy học sinh nào phù hợp.</p>
                       <p className="text-xs mt-1 text-gray-400">Hãy thử thay đổi từ khóa tìm kiếm hoặc bỏ bớt các bộ lọc.</p>
+                      {isFilterActive && (
+                        <button
+                          type="button"
+                          onClick={handleResetFilters}
+                          className="mt-3.5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 text-xs font-semibold cursor-pointer transition-all active:scale-95"
+                        >
+                          <RotateCcw size={14} />
+                          <span>Đặt lại tất cả bộ lọc</span>
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ) : paginatedStudents.map((student) => {
@@ -1601,15 +1661,42 @@ const Students = () => {
                         )}
                       </td>
                       <td className="px-4 py-4">
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                          student.status === 'graduated'
-                            ? 'bg-purple-100 text-purple-700'
-                            : student.status === 'suspended'
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-emerald-100 text-emerald-700'
-                        }`}>
-                          {student.status === 'graduated' ? 'Tốt nghiệp' : (student.status === 'suspended' ? 'Đình chỉ' : 'Đang học')}
-                        </span>
+                        {(() => {
+                          const rawStatus = (student.status || 'active').toLowerCase();
+                          if (rawStatus === 'graduated') {
+                            return (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                                Tốt nghiệp
+                              </span>
+                            );
+                          }
+                          if (rawStatus === 'suspended') {
+                            return (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
+                                Đình chỉ
+                              </span>
+                            );
+                          }
+                          if (rawStatus === 'reserved') {
+                            return (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
+                                Bảo lưu
+                              </span>
+                            );
+                          }
+                          if (rawStatus === 'withdrawn') {
+                            return (
+                              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                                Thôi học
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                              Đang học
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-4">
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${

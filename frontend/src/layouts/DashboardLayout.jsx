@@ -26,6 +26,7 @@ import {
   Moon,
   Search,
   ChevronRight,
+  ChevronDown,
   Sparkles,
   ExternalLink,
   HelpCircle,
@@ -84,6 +85,26 @@ const DashboardLayout = () => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotificationMenu, setShowNotificationMenu] = useState(false);
   const [notificationsList, setNotificationsList] = useState([]);
+  
+  // Trạng thái thu gọn / mở rộng của các nhóm danh mục trong sidebar (lưu localStorage)
+  const [collapsedSections, setCollapsedSections] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sidebar_collapsed_sections');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const toggleSection = (title) => {
+    setCollapsedSections(prev => {
+      const next = { ...prev, [title]: !prev[title] };
+      try {
+        localStorage.setItem('sidebar_collapsed_sections', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  };
   
   const location = useLocation();
   const navigate = useNavigate();
@@ -237,7 +258,6 @@ const DashboardLayout = () => {
           { icon: BookOpenCheck, label: 'Học Bạ & Tổng Điểm', path: '/grades' },
           { icon: FileText, label: 'Sổ Đầu Bài Điện Tử', path: '/lesson-logs' },
           { icon: FileQuestion, label: 'Xử Lý Đơn & Phúc Khảo', path: '/petitions' },
-          { icon: Users, label: 'Danh Sách Học Sinh', path: '/students' },
         ]
       });
     } else {
@@ -260,6 +280,7 @@ const DashboardLayout = () => {
       sections.push({
         title: 'QUẢN TRỊ KHOA / ĐƠN VỊ',
         items: [
+          { icon: CalendarClock, label: 'Phân công giảng dạy', path: '/teaching-assignment', badge: 'Trưởng Khoa' },
           { icon: Shield, label: 'Quản Trị Tài Khoản (Khóa/Đình chỉ)', path: '/users', badge: 'Quản Khoa' },
         ]
       });
@@ -293,6 +314,7 @@ const DashboardLayout = () => {
           { icon: LayoutList, label: 'Quản lý lớp học', path: '/classes' },
           { icon: BookOpen, label: 'Quản lý môn học', path: '/subjects' },
           { icon: Calendar, label: 'Thời khóa biểu (TKB)', path: '/schedule' },
+          { icon: CalendarClock, label: 'Phân công giảng dạy', path: '/teaching-assignment' },
           { icon: CalendarDays, label: 'Lịch thi học kỳ', path: '/exams' },
           { icon: BookOpenCheck, label: 'Sổ điểm điện tử TT22', path: '/grades' },
           { icon: FileText, label: 'Sổ đầu bài điện tử', path: '/lesson-logs' },
@@ -352,6 +374,23 @@ const DashboardLayout = () => {
   };
 
   const sections = menuSections[userRole] || menuSections.student;
+
+  // Tự động mở nhóm chứa đường dẫn active nếu nhóm đó đang bị gập
+  useEffect(() => {
+    const currentPath = location.pathname;
+    sections.forEach(sec => {
+      const hasActiveItem = sec.items.some(item => item.path === currentPath);
+      if (hasActiveItem && collapsedSections[sec.title]) {
+        setCollapsedSections(prev => {
+          const next = { ...prev, [sec.title]: false };
+          try {
+            localStorage.setItem('sidebar_collapsed_sections', JSON.stringify(next));
+          } catch (e) {}
+          return next;
+        });
+      }
+    });
+  }, [location.pathname, sections]);
 
   // Search filter
   const allNavItems = sections.flatMap(s => s.items);
@@ -431,28 +470,78 @@ const DashboardLayout = () => {
       )}
 
       {/* Navigation Sections */}
-      <div className="flex-1 py-3 px-3 overflow-y-auto space-y-4 custom-scrollbar">
-        {sections.map((sec, idx) => (
-          <div key={idx}>
-            {(expanded || isMobile) && (
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-1.5">
-                {sec.title}
-              </p>
-            )}
-            <div className="space-y-0.5">
-              {sec.items.map(item => (
-                <SidebarItem
-                  key={item.path}
-                  icon={item.icon}
-                  label={item.label}
-                  path={item.path}
-                  active={location.pathname === item.path}
-                  expanded={expanded || isMobile}
-                />
-              ))}
+      <div className="flex-1 py-3 px-3 overflow-y-auto space-y-3 custom-scrollbar">
+        {sections.map((sec, idx) => {
+          const isCollapsed = Boolean(collapsedSections[sec.title]);
+          const isExpandedView = expanded || isMobile;
+
+          return (
+            <div key={sec.title || idx} className="select-none">
+              {isExpandedView ? (
+                <>
+                  {/* Tiêu đề nhóm có nút sổ xuống / gập lại */}
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(sec.title)}
+                    className="w-full flex items-center justify-between px-3 py-1.5 mb-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-all duration-150 group text-left cursor-pointer"
+                    title={isCollapsed ? `Mở rộng ${sec.title}` : `Thu gọn ${sec.title}`}
+                  >
+                    <span className="text-[10px] font-bold uppercase tracking-wider truncate">
+                      {sec.title}
+                    </span>
+                    <ChevronDown
+                      size={13}
+                      className={`shrink-0 transition-transform duration-200 text-slate-400 group-hover:text-slate-200 ${
+                        isCollapsed ? '-rotate-90 text-slate-500' : 'rotate-0'
+                      }`}
+                    />
+                  </button>
+
+                  {/* Danh sách mục con có animation mượt mà */}
+                  <AnimatePresence initial={false}>
+                    {!isCollapsed && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: 'easeInOut' }}
+                        className="overflow-hidden space-y-0.5"
+                      >
+                        {sec.items.map(item => (
+                          <SidebarItem
+                            key={item.path}
+                            icon={item.icon}
+                            label={item.label}
+                            path={item.path}
+                            active={location.pathname === item.path}
+                            expanded={true}
+                            badge={item.badge}
+                          />
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </>
+              ) : (
+                /* Chế độ sidebar thu nhỏ (chỉ icon): Giữ tất cả icon kèm divider phân nhóm */
+                <div className="space-y-0.5">
+                  {idx > 0 && <div className="border-t border-slate-800/60 my-2 mx-1" />}
+                  {sec.items.map(item => (
+                    <SidebarItem
+                      key={item.path}
+                      icon={item.icon}
+                      label={item.label}
+                      path={item.path}
+                      active={location.pathname === item.path}
+                      expanded={false}
+                      badge={item.badge}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* User Footer Profile */}

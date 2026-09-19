@@ -3,7 +3,8 @@ import {
     createFeeProfile,
     getFeeProfiles,
     updateFeeProfile,
-    assignFeeProfile
+    assignFeeProfile,
+    backfillUnassignedFeeProfiles
 } from '../controllers/feeProfileController.js';
 import { protect, authorize } from '../middlewares/authMiddleware.js';
 
@@ -17,5 +18,6 @@ router.post('/', createFeeProfile);
 router.get('/', getFeeProfiles);
 router.put('/:id', updateFeeProfile);
 router.post('/assign', assignFeeProfile);
+router.post('/backfill-unassigned', backfillUnassignedFeeProfiles);
 
 export default router;

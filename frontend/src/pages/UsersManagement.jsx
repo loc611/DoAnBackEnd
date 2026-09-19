@@ -477,6 +477,7 @@ const UserFormModal = ({ isOpen, onClose, user, classesList = [], onSuccess }) =
 };
 
 const UsersManagement = () => {
+    const currentUserRole = localStorage.getItem('userRole');
     const [users, setUsers] = useState([]);
     const [classesList, setClassesList] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -748,10 +749,12 @@ const UsersManagement = () => {
                     <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight">Quản lý Tài khoản Hệ thống</h2>
                     <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">Toàn quyền cấp phát, kiểm soát trạng thái hoạt động và bảo mật</p>
                 </div>
-                <button onClick={handleAdd} className="btn-primary flex items-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-2xl shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/35 transition-all cursor-pointer">
-                    <Plus size={18} className="mr-2" />
-                    Cấp Tài khoản
-                </button>
+                {currentUserRole === 'admin' && (
+                    <button onClick={handleAdd} className="btn-primary flex items-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-2xl shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/35 transition-all cursor-pointer">
+                        <Plus size={18} className="mr-2" />
+                        Cấp Tài khoản
+                    </button>
+                )}
             </div>
 
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden flex flex-col">
@@ -825,12 +828,16 @@ const UsersManagement = () => {
                                         <td className="px-6 py-4">{getStatusBadge(u.status)}</td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex justify-end items-center space-x-1.5">
-                                                <button onClick={() => handleEdit(u)} className="w-8 h-8 rounded-xl flex items-center justify-center bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-105 transition-all cursor-pointer" title="Sửa hồ sơ">
-                                                    <Edit size={15} />
-                                                </button>
-                                                <button onClick={() => handleResetPassword(u)} className="w-8 h-8 rounded-xl flex items-center justify-center bg-amber-50 text-amber-600 hover:bg-amber-100 hover:scale-105 transition-all cursor-pointer" title="Đặt lại mật khẩu">
-                                                    <KeyRound size={15} />
-                                                </button>
+                                                {currentUserRole === 'admin' && (
+                                                    <>
+                                                        <button onClick={() => handleEdit(u)} className="w-8 h-8 rounded-xl flex items-center justify-center bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-105 transition-all cursor-pointer" title="Sửa hồ sơ">
+                                                            <Edit size={15} />
+                                                        </button>
+                                                        <button onClick={() => handleResetPassword(u)} className="w-8 h-8 rounded-xl flex items-center justify-center bg-amber-50 text-amber-600 hover:bg-amber-100 hover:scale-105 transition-all cursor-pointer" title="Đặt lại mật khẩu">
+                                                            <KeyRound size={15} />
+                                                        </button>
+                                                    </>
+                                                )}
                                                 {u.status !== 'active' && (
                                                     <button onClick={() => handleSetStatus(u, 'active')} className="w-8 h-8 rounded-xl flex items-center justify-center bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105 transition-all cursor-pointer" title="Mở khóa tài khoản">
                                                         <Unlock size={15} />
@@ -841,9 +848,11 @@ const UsersManagement = () => {
                                                         <Lock size={15} />
                                                     </button>
                                                 )}
-                                                <button onClick={() => handleDelete(u)} className="w-8 h-8 rounded-xl flex items-center justify-center bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-105 transition-all cursor-pointer" title="Xóa vĩnh viễn">
-                                                    <Trash2 size={15} />
-                                                </button>
+                                                {currentUserRole === 'admin' && (
+                                                    <button onClick={() => handleDelete(u)} className="w-8 h-8 rounded-xl flex items-center justify-center bg-rose-50 text-rose-600 hover:bg-rose-100 hover:scale-105 transition-all cursor-pointer" title="Xóa vĩnh viễn">
+                                                        <Trash2 size={15} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

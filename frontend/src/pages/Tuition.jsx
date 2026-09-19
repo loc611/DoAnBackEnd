@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Edit, X, DollarSign, Wallet, CreditCard, PieChart, Users, CheckCircle, Printer, Layers, ShieldCheck, Trash2 } from 'lucide-react';
+import { Search, Plus, Edit, X, DollarSign, Wallet, CreditCard, PieChart, Users, CheckCircle, Printer, Layers, ShieldCheck, Trash2, RefreshCw } from 'lucide-react';
 import api from '../services/api';
 import Swal from 'sweetalert2';
 import GradeClassSelector from '../components/GradeClassSelector';
@@ -848,13 +848,31 @@ const Tuition = () => {
                 await api.put(`/fee-profiles/${selectedProfile.id}`, formData);
                 Swal.fire('Thành công', 'Cập nhật đợt thu thành công', 'success');
             } else {
-                await api.post('/fee-profiles', formData);
-                Swal.fire('Thành công', 'Tạo đợt thu mới thành công', 'success');
+                const res = await api.post('/fee-profiles', formData);
+                Swal.fire('Thành công', res.data?.message || 'Tạo đợt thu mới thành công', 'success');
             }
             setIsProfileModalOpen(false);
             fetchData();
+            if (selectedClassId) fetchClassTuition(selectedClassId);
         } catch (err) {
             Swal.fire('Lỗi', err.response?.data?.message || 'Có lỗi xảy ra', 'error');
+        }
+    };
+
+    const handleBackfillUnassigned = async () => {
+        try {
+            Swal.fire({
+                title: 'Đang đồng bộ...',
+                text: 'Hệ thống đang kiểm tra và gán bù hóa đơn học phí cho học sinh',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+            const res = await api.post('/fee-profiles/backfill-unassigned');
+            Swal.fire('Hoàn tất', res.data?.message || 'Đã đồng bộ hóa đơn thành công', 'success');
+            fetchData();
+            if (selectedClassId) fetchClassTuition(selectedClassId);
+        } catch (err) {
+            Swal.fire('Lỗi', err.response?.data?.message || 'Có lỗi xảy ra khi gán bù', 'error');
         }
     };
 
@@ -1139,9 +1157,18 @@ const Tuition = () => {
                             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
                                 <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                                     <h3 className="text-lg font-bold text-gray-800">Danh sách Đợt thu học phí</h3>
-                                    <button onClick={handleAddProfile} className="btn-primary flex items-center px-4 py-2 text-sm">
-                                        <Plus size={18} className="mr-2" /> Tạo đợt thu
-                                    </button>
+                                    <div className="flex items-center space-x-2">
+                                        <button 
+                                            onClick={handleBackfillUnassigned} 
+                                            title="Kiểm tra và tự động cấp hóa đơn học phí bù cho các học sinh chưa nhận được" 
+                                            className="flex items-center px-3.5 py-2 text-sm font-semibold rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors shadow-2xs"
+                                        >
+                                            <RefreshCw size={16} className="mr-1.5" /> Đồng bộ & Cấp bù hóa đơn
+                                        </button>
+                                        <button onClick={handleAddProfile} className="btn-primary flex items-center px-4 py-2 text-sm">
+                                            <Plus size={18} className="mr-2" /> Tạo đợt thu
+                                        </button>
+                                    </div>
                                 </div>
                                 
                                 <div className="overflow-x-auto">
