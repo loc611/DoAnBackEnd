@@ -97,3 +97,9 @@
     color: black !important;
   }
 }
+
+/* Ẩn con mắt và nút clear mặc định của trình duyệt Edge / IE */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
