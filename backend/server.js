@@ -31,6 +31,7 @@ import rateLimit from 'express-rate-limit';
 import { initDefaultUsers } from './utils/initDefaultUsers.js';
 import { seedRbacScopeData } from './utils/seedRbacScope.js';
 import { applyPendingMigrations } from './scripts/apply_pending_migrations.js';
+import { backfillFeeProfilesHelper } from './controllers/feeProfileController.js';
 
 dotenv.config();
 
@@ -87,6 +88,7 @@ app.use('/api/classes', classRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/schedule', scheduleRoutes);
+app.use('/api/makeup-proposals', scheduleRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/fee-profiles', feeProfileRoutes);
 app.use('/api/tuition', tuitionRoutes);
@@ -125,6 +127,7 @@ const server = app.listen(PORT, async () => {
         await applyPendingMigrations();
         await initDefaultUsers();
         await seedRbacScopeData();
+        await backfillFeeProfilesHelper();
     } catch (e) {
         console.error('Initial seeding notice:', e.message);
     }

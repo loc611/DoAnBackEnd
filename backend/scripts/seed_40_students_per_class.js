@@ -5,6 +5,8 @@ import { seedRbacScopeData } from '../utils/seedRbacScope.js';
 
 const ACADEMIC_YEAR = '2026-2027';
 const SEMESTER = 'HK1_2026';
+const TARGET_STUDENTS_PER_CLASS = 40;
+const DEFAULT_STUDENT_PASSWORD = '1111';
 
 const HO_LIST = ['Nguyễn', 'Trần', 'Lê', 'Phạm', 'Hoàng', 'Huỳnh', 'Phan', 'Vũ', 'Võ', 'Đặng', 'Bùi', 'Đỗ', 'Hồ', 'Ngô', 'Dương', 'Lý', 'Đinh', 'Đoàn', 'Lâm', 'Trịnh'];
 const DEM_NAM = ['Văn', 'Đức', 'Hữu', 'Minh', 'Quang', 'Quốc', 'Tiến', 'Thành', 'Tuấn', 'Thanh', 'Đình', 'Gia', 'Hoàng'];
@@ -12,7 +14,8 @@ const DEM_NU = ['Thị', 'Ngọc', 'Thu', 'Thảo', 'Phương', 'Bích', 'Quỳn
 const TEN_NAM = ['An', 'Bình', 'Cường', 'Dũng', 'Đạt', 'Hải', 'Hiếu', 'Huy', 'Hùng', 'Khoa', 'Kiệt', 'Long', 'Minh', 'Nam', 'Nghĩa', 'Phúc', 'Quân', 'Sang', 'Thắng', 'Tùng', 'Việt', 'Vinh'];
 const TEN_NU = ['Anh', 'Châu', 'Dung', 'Hà', 'Hằng', 'Hoa', 'Hương', 'Lan', 'Linh', 'Mai', 'My', 'Nga', 'Ngân', 'Ngọc', 'Nhi', 'Như', 'Quyên', 'Thảo', 'Trang', 'Trâm', 'Tuyết', 'Uyên', 'Vy', 'Yến'];
 
-const CLASSES_CONFIG = [
+// 7 Lớp chuẩn tối thiểu của trường
+const BASELINE_CLASSES = [
   { className: '10A1', grade: 10, teacherCode: 'GV001' },
   { className: '10A2', grade: 10, teacherCode: 'GV002' },
   { className: '10A3', grade: 10, teacherCode: 'GV003' },
@@ -22,7 +25,7 @@ const CLASSES_CONFIG = [
   { className: '12A2', grade: 12, teacherCode: 'GV007' }
 ];
 
-function generateRandomStudent(index, classConfig) {
+function generateRandomStudent(index, grade) {
   const isMale = index % 2 === 0;
   const ho = HO_LIST[index % HO_LIST.length];
   const dem = isMale 
@@ -38,7 +41,7 @@ function generateRandomStudent(index, classConfig) {
   const parentTen = TEN_NAM[(index + 3) % TEN_NAM.length];
   const parentName = `${parentHo} ${parentDem} ${parentTen}`;
 
-  const birthYear = classConfig.grade === 10 ? 2010 : classConfig.grade === 11 ? 2009 : 2008;
+  const birthYear = grade === 10 ? 2010 : grade === 11 ? 2009 : 2008;
   const birthMonth = String((index % 12) + 1).padStart(2, '0');
   const birthDay = String((index % 28) + 1).padStart(2, '0');
 
@@ -59,29 +62,28 @@ function generateRandomStudent(index, classConfig) {
 }
 
 async function run() {
-  console.log('🚀 BẮT ĐẦU TẠO DỮ LIỆU 40 HỌC SINH CHO MỖI LỚP (TỔNG CỘNG 280 HỌC SINH)...\n');
+  console.log('🚀 BẮT ĐẦU TIẾN TRÌNH BỔ SUNG HỌC SINH (MỤC TIÊU 40 EM/LỚP)...');
+  console.log(`📌 Quy ước mật khẩu mặc định: "${DEFAULT_STUDENT_PASSWORD}"\n`);
 
   await initDefaultUsers();
   await seedRbacScopeData();
 
   const studentRole = await prisma.role.findUnique({ where: { name: 'student' } });
-  const studentPassHash = await bcrypt.hash('student123', 10);
+  const studentPassHash = await bcrypt.hash(DEFAULT_STUDENT_PASSWORD, 10);
 
-  // 1. Tạo/Đồng bộ 7 Lớp học
-  console.log('🏫 1. Đồng bộ 7 Lớp học...');
-  const classRecords = [];
-  for (const c of CLASSES_CONFIG) {
+  // 1. Đảm bảo 7 lớp cơ bản luôn tồn tại
+  console.log('🏫 1. Kiểm tra và đảm bảo các lớp học chuẩn...');
+  for (const c of BASELINE_CLASSES) {
     let teacher = null;
     if (c.teacherCode) {
       teacher = await prisma.teacher.findFirst({ where: { teacherCode: c.teacherCode } });
     }
 
-    const cls = await prisma.class.upsert({
+    await prisma.class.upsert({
       where: { className: c.className },
       update: {
         grade: c.grade,
         academicYear: ACADEMIC_YEAR,
-        homeroomTeacherId: teacher ? teacher.id : null,
         status: 'active'
       },
       create: {
@@ -92,21 +94,62 @@ async function run() {
         status: 'active'
       }
     });
-    classRecords.push(cls);
-    console.log(`  ✅ Lớp ${cls.className} (Khối ${cls.grade}) - GVCN: ${teacher?.fullName || 'Chưa phân công'}`);
   }
 
-  // 2. Tạo 40 học sinh cho mỗi lớp (tổng cộng 280 học sinh)
-  console.log('\n🎓 2. Tạo 40 học sinh cho mỗi lớp (280 học sinh)...');
-  let globalStudentIndex = 1;
-  const allCreatedStudents = [];
+  // 2. Quét TẤT CẢ các lớp học hiện có trong hệ thống
+  const allClasses = await prisma.class.findMany({
+    include: {
+      students: true,
+      homeroomTeacher: true
+    },
+    orderBy: [
+      { grade: 'asc' },
+      { className: 'asc' }
+    ]
+  });
 
-  for (const cls of classRecords) {
-    const classConfig = CLASSES_CONFIG.find(c => c.className === cls.className);
-    console.log(`  -> Đang tạo 40 học sinh cho lớp ${cls.className}...`);
+  console.log(`📋 Tìm thấy tổng cộng ${allClasses.length} lớp học trong cơ sở dữ liệu:`);
+  for (const c of allClasses) {
+    console.log(`   - Lớp ${c.className} (Khối ${c.grade}): hiện có ${c.students.length} học sinh`);
+  }
 
-    for (let i = 1; i <= 40; i++) {
-      const studentData = generateRandomStudent(globalStudentIndex, classConfig);
+  // 3. Tìm mã số học sinh lớn nhất hiện tại (HSxxx) để sinh tiếp không bị trùng
+  const existingStudents = await prisma.student.findMany({
+    select: { studentCode: true }
+  });
+
+  let maxCodeNumber = 0;
+  for (const s of existingStudents) {
+    const match = (s.studentCode || '').match(/^HS(\d+)$/i);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxCodeNumber) {
+        maxCodeNumber = num;
+      }
+    }
+  }
+  console.log(`\n🔢 Mã học sinh lớn nhất hiện có: HS${String(maxCodeNumber).padStart(3, '0')}`);
+
+  let currentCodeSequence = maxCodeNumber + 1;
+  const newlyCreatedStudents = [];
+  const allEnrolledStudents = [];
+
+  // 4. Bổ sung học sinh cho từng lớp nếu chưa đủ TARGET_STUDENTS_PER_CLASS (40)
+  console.log('\n🎓 4. Tiến hành bổ sung học sinh để mỗi lớp đạt đủ 40 em...');
+  for (const cls of allClasses) {
+    const currentCount = cls.students.length;
+    allEnrolledStudents.push(...cls.students);
+
+    if (currentCount >= TARGET_STUDENTS_PER_CLASS) {
+      console.log(`  ✅ Lớp ${cls.className}: Đã có ${currentCount} học sinh (đạt chuẩn ≥ ${TARGET_STUDENTS_PER_CLASS}), giữ nguyên.`);
+      continue;
+    }
+
+    const needed = TARGET_STUDENTS_PER_CLASS - currentCount;
+    console.log(`  ➕ Lớp ${cls.className}: Đang có ${currentCount} em, bổ sung thêm ${needed} em...`);
+
+    for (let i = 1; i <= needed; i++) {
+      const studentData = generateRandomStudent(currentCodeSequence, cls.grade || 10);
 
       // Tạo/Cập nhật User
       let user = await prisma.user.findFirst({
@@ -133,6 +176,12 @@ async function run() {
             data: { userId: user.id, roleId: studentRole.id }
           });
         }
+      } else {
+        // Đảm bảo mật khẩu luôn là DEFAULT_STUDENT_PASSWORD
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { password: studentPassHash }
+        });
       }
 
       // Tạo/Cập nhật Student
@@ -161,16 +210,21 @@ async function run() {
         }
       });
 
-      allCreatedStudents.push({ ...student, className: cls.className });
-      globalStudentIndex++;
+      newlyCreatedStudents.push({ ...student, className: cls.className });
+      allEnrolledStudents.push(student);
+      currentCodeSequence++;
     }
-    console.log(`  ✅ Đã tạo xong 40 học sinh cho lớp ${cls.className}`);
+    console.log(`  👉 Đã bổ sung đủ 40 học sinh cho lớp ${cls.className}!`);
   }
 
-  console.log(`\n✨ Tổng cộng đã nạp thành công: ${allCreatedStudents.length} học sinh.`);
+  console.log(`\n🎉 Đã tạo mới thành công: ${newlyCreatedStudents.length} học sinh.`);
 
-  // 3. Nhập Bảng Điểm thực tế cho toàn bộ 280 học sinh
-  console.log('\n📊 3. Nhập Bảng Điểm cho toàn bộ 280 học sinh...');
+  // 5. Cập nhật Bảng Điểm mẫu HK1 cho học sinh chưa có điểm
+  console.log('\n📊 5. Kiểm tra và đồng bộ Bảng Điểm mẫu HK1 cho học sinh...');
+  const allCurrentStudents = await prisma.student.findMany({
+    where: { classId: { not: null } }
+  });
+
   const baseScores = [
     { math: 8.5, literature: 8.0, english: 9.0, physics: 8.5, chemistry: 7.5, it: 9.5 },
     { math: 9.0, literature: 8.5, english: 8.5, physics: 9.0, chemistry: 8.5, it: 9.0 },
@@ -182,35 +236,38 @@ async function run() {
     { math: 7.5, literature: 8.0, english: 7.5, physics: 8.0, chemistry: 7.0, it: 8.5 }
   ];
 
-  for (let i = 0; i < allCreatedStudents.length; i++) {
-    const student = allCreatedStudents[i];
+  let syncedGradesCount = 0;
+  for (let i = 0; i < allCurrentStudents.length; i++) {
+    const student = allCurrentStudents[i];
     const scores = baseScores[i % baseScores.length];
 
-    await prisma.grade.upsert({
+    const existingGrade = await prisma.grade.findUnique({
       where: {
         studentId_classId_semester: {
           studentId: student.id,
           classId: student.classId,
           semester: SEMESTER
         }
-      },
-      update: {
-        status: 'locked',
-        ...scores
-      },
-      create: {
-        studentId: student.id,
-        classId: student.classId,
-        semester: SEMESTER,
-        status: 'locked',
-        ...scores
       }
     });
-  }
-  console.log(`  ✅ Đã cập nhật điểm HK1 cho 280 học sinh.`);
 
-  // 4. Tạo Dữ liệu Điểm danh 5 ngày gần nhất cho toàn bộ học sinh
-  console.log('\n📝 4. Tạo Lịch sử Điểm danh 5 ngày gần nhất cho 280 học sinh...');
+    if (!existingGrade) {
+      await prisma.grade.create({
+        data: {
+          studentId: student.id,
+          classId: student.classId,
+          semester: SEMESTER,
+          status: 'locked',
+          ...scores
+        }
+      });
+      syncedGradesCount++;
+    }
+  }
+  console.log(`  ✅ Đã đồng bộ điểm HK1 (thêm mới cho ${syncedGradesCount} học sinh chưa có điểm).`);
+
+  // 6. Cập nhật Lịch sử Điểm danh 5 ngày gần nhất cho học sinh
+  console.log('\n📝 6. Kiểm tra và đồng bộ Điểm danh 5 ngày gần nhất...');
   const dates = [
     new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
     new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
@@ -219,10 +276,11 @@ async function run() {
     new Date()
   ];
 
+  let attendanceCreatedCount = 0;
   for (const d of dates) {
     d.setHours(0, 0, 0, 0);
-    for (let i = 0; i < allCreatedStudents.length; i++) {
-      const student = allCreatedStudents[i];
+    for (let i = 0; i < allCurrentStudents.length; i++) {
+      const student = allCurrentStudents[i];
 
       let status = 'present';
       let note = '';
@@ -234,66 +292,92 @@ async function run() {
         note = 'Có đơn xin phép';
       }
 
-      await prisma.attendance.upsert({
+      const existingAtt = await prisma.attendance.findFirst({
         where: {
-          studentId_classId_date_session: {
+          studentId: student.id,
+          classId: student.classId,
+          date: d
+        }
+      });
+
+      if (!existingAtt) {
+        await prisma.attendance.create({
+          data: {
             studentId: student.id,
             classId: student.classId,
             date: d,
-            session: 'morning'
+            session: 'morning',
+            periodNumber: 1,
+            status,
+            note
           }
-        },
-        update: { status, note },
-        create: {
-          studentId: student.id,
-          classId: student.classId,
-          date: d,
-          session: 'morning',
-          status,
-          note
-        }
-      });
+        });
+        attendanceCreatedCount++;
+      }
     }
   }
-  console.log(`  ✅ Đã hoàn tất điểm danh 5 ngày cho 280 học sinh.`);
+  console.log(`  ✅ Đã điểm danh 5 ngày (thêm mới ${attendanceCreatedCount} bản ghi điểm danh).`);
 
-  // 5. Gán Hóa đơn Học phí cho toàn bộ 280 học sinh
-  console.log('\n💰 5. Gán Hóa đơn Học phí cho toàn bộ 280 học sinh...');
+  // 7. Gán Hóa đơn Học phí cho học sinh
+  console.log('\n💰 7. Kiểm tra và gán Hóa đơn Học phí cho học sinh...');
   const feeProfiles = await prisma.feeProfile.findMany();
+  let createdBillsCount = 0;
 
   for (const profile of feeProfiles) {
-    for (let i = 0; i < allCreatedStudents.length; i++) {
-      const student = allCreatedStudents[i];
-      // Tỷ lệ: 65% đã nộp, 35% còn nợ
+    for (let i = 0; i < allCurrentStudents.length; i++) {
+      const student = allCurrentStudents[i];
       const isPaid = (i % 3 !== 0);
 
-      await prisma.feeBill.upsert({
+      const existingBill = await prisma.feeBill.findFirst({
         where: {
-          feeProfileId_studentId: {
-            feeProfileId: profile.id,
-            studentId: student.id
-          }
-        },
-        update: {
-          status: isPaid ? 'paid' : 'unpaid',
-          paidAt: isPaid ? new Date() : null
-        },
-        create: {
           feeProfileId: profile.id,
-          studentId: student.id,
-          status: isPaid ? 'paid' : 'unpaid',
-          paidAt: isPaid ? new Date() : null
+          studentId: student.id
         }
       });
-    }
-    console.log(`  ✅ Gán khoản thu "${profile.name}" cho 280 học sinh.`);
-  }
 
-  console.log('\n🎉 HOÀN TẤT NẠP DỮ LIỆU 40 HỌC SINH / LỚP (TỔNG CỘNG 280 HỌC SINH) THÀNH CÔNG 100%!');
+      if (!existingBill) {
+        await prisma.feeBill.create({
+          data: {
+            feeProfileId: profile.id,
+            studentId: student.id,
+            status: isPaid ? 'paid' : 'unpaid',
+            paidAt: isPaid ? new Date() : null,
+            originalAmount: profile.amount,
+            finalAmount: profile.amount
+          }
+        });
+        createdBillsCount++;
+      }
+    }
+    console.log(`  ✅ Khoản thu "${profile.name}": đồng bộ thành công.`);
+  }
+  console.log(`  ✅ Đã tạo mới ${createdBillsCount} hóa đơn học phí cho học sinh chưa có.`);
+
+  // 8. Thống kê kết quả cuối cùng
+  console.log('\n======================================================');
+  console.log('🏆 KẾT QUẢ TỔNG KẾT TẤT CẢ CÁC LỚP:');
+  const finalClasses = await prisma.class.findMany({
+    include: {
+      _count: { select: { students: true } }
+    },
+    orderBy: [
+      { grade: 'asc' },
+      { className: 'asc' }
+    ]
+  });
+
+  for (const c of finalClasses) {
+    console.log(`  🏫 Lớp ${c.className.padEnd(6)} | Khối ${c.grade} | Sĩ số: ${c._count.students} học sinh`);
+  }
+  const totalStudents = await prisma.student.count();
+  console.log(`\n🎯 Tổng số học sinh toàn trường hiện tại: ${totalStudents} học sinh.`);
+  console.log('🔑 Mật khẩu mặc định cho toàn bộ học sinh: 1111');
+  console.log('======================================================\n');
+
   await prisma.$disconnect();
 }
 
 run().catch((err) => {
-  console.error('❌ Lỗi:', err);
+  console.error('❌ Lỗi tiến trình:', err);
   process.exit(1);
 });

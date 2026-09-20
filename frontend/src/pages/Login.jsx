@@ -60,7 +60,13 @@ const Login = () => {
 
       navigate('/');
     } catch (err) {
-      setErrorMsg(err.response?.data?.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại email hoặc mật khẩu.');
+      if (!err.response) {
+        setErrorMsg('Không thể kết nối đến máy chủ Backend (Lỗi mạng hoặc server chưa bật). Vui lòng kiểm tra VITE_API_URL.');
+      } else if (err.response.status === 404) {
+        setErrorMsg('Không tìm thấy đường dẫn API (404 Not Found). Vui lòng kiểm tra cấu hình VITE_API_URL trên Vercel.');
+      } else {
+        setErrorMsg(err.response?.data?.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại email hoặc mật khẩu.');
+      }
     } finally {
       setLoading(false);
     }
