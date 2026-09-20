@@ -1,7 +1,9 @@
 import axios from 'axios';
 
-// Base URL: Sử dụng biến môi trường nếu có, hoặc dùng proxy dev / proxy production
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+// Base URL: Sử dụng biến môi trường nếu có, mặc định fallback an toàn về 'http://localhost:5000/api'
+const rawApiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').trim();
+// Chuẩn hóa loại bỏ dấu '/' cuối cùng nếu có để tránh trùng lặp '//' khi kết hợp với các route
+const API_URL = rawApiUrl.replace(/\/+$/, '');
 
 const api = axios.create({
   baseURL: API_URL,
