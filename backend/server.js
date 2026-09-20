@@ -64,7 +64,13 @@ const allowedOrigins = [
 // CORS Middleware
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        if (
+            !origin || 
+            allowedOrigins.includes(origin) || 
+            /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+            origin.endsWith('.vercel.app') ||
+            origin.endsWith('.loca.lt')
+        ) {
             callback(null, true);
         } else if (process.env.NODE_ENV !== 'production') {
             callback(null, true); // Dev mode fallback
@@ -74,7 +80,7 @@ app.use(cors({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'Bypass-Tunnel-Reminder', 'bypass-tunnel-reminder']
 }));
 
 app.use(express.json());

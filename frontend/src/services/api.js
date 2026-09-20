@@ -7,6 +7,9 @@ const API_URL = rawApiUrl.replace(/\/+$/, '');
 
 const api = axios.create({
   baseURL: API_URL,
+  headers: {
+    'Bypass-Tunnel-Reminder': 'true'
+  }
 });
 
 // Interceptor để tự động gắn JWT Token vào Header của mọi request
