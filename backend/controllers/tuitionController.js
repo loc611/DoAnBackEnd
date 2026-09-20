@@ -230,9 +230,31 @@ export const lookupStudentFee = async (req, res) => {
                     { fullName: { contains: keyword, mode: 'insensitive' } }
                 ]
             },
-            take: 10,
+            take: 25,
+            orderBy: { fullName: 'asc' },
             include: {
-                class: true,
+                class: {
+                    include: {
+                        homeroomTeacher: {
+                            select: {
+                                fullName: true,
+                                phone: true
+                            }
+                        }
+                    }
+                },
+                policies: {
+                    where: { status: 'ACTIVE' },
+                    select: {
+                        id: true,
+                        policyType: true,
+                        policyName: true,
+                        discountRate: true,
+                        fixedDiscount: true,
+                        documentNumber: true,
+                        documentExpiryDate: true
+                    }
+                },
                 feeBills: {
                     where: {
                         ...(academicYear || semester ? {
@@ -252,9 +274,35 @@ export const lookupStudentFee = async (req, res) => {
             }
         });
 
+        const getBillAmount = (b) => (b.finalAmount !== null && b.finalAmount !== undefined) ? b.finalAmount : (b.feeProfile?.amount || 0);
+        const enrichedStudents = students.map(st => {
+            const studentTotal = (st.feeBills || []).reduce((sum, b) => sum + getBillAmount(b), 0);
+            const studentPaid = (st.feeBills || []).filter(b => b.status === 'paid').reduce((sum, b) => sum + getBillAmount(b), 0);
+            const studentUnpaid = studentTotal - studentPaid;
+
+            let paymentStatus = 'no_bills';
+            if (st.feeBills?.length > 0) {
+                if (studentUnpaid === 0) {
+                    paymentStatus = 'fully_paid';
+                } else if (studentPaid > 0) {
+                    paymentStatus = 'partial_paid';
+                } else {
+                    paymentStatus = 'unpaid';
+                }
+            }
+
+            return {
+                ...st,
+                studentTotal,
+                studentPaid,
+                studentUnpaid,
+                paymentStatus
+            };
+        });
+
         res.status(200).json({
             success: true,
-            data: students
+            data: enrichedStudents
         });
     } catch (error) {
         console.error('Error in lookupStudentFee:', error);
@@ -289,6 +337,18 @@ export const getClassStudentsTuition = async (req, res) => {
             where: { classId },
             orderBy: { fullName: 'asc' },
             include: {
+                policies: {
+                    where: { status: 'ACTIVE' },
+                    select: {
+                        id: true,
+                        policyType: true,
+                        policyName: true,
+                        discountRate: true,
+                        fixedDiscount: true,
+                        documentNumber: true,
+                        documentExpiryDate: true
+                    }
+                },
                 feeBills: {
                     where: {
                         ...(academicYear || semester ? {

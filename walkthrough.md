@@ -360,3 +360,26 @@ Toàn bộ các bài kiểm thử tự động đã được chạy lại sau kh
 - **`verify_teacher_fixes.js`:** **12 / 12 PASS (100%)**.
 
 **Hệ thống hiện tại vận hành ở trạng thái tối ưu cao độ, bảo mật chặt chẽ bằng RBAC/Scope Guard và đảm bảo tính ổn định tuyệt đối trên môi trường thực tế.**
+
+---
+
+## VIII. KHẮC PHỤC & NÂNG CẤP LIÊN KẾT DỮ LIỆU MIỄN GIẢM HỌC PHÍ (POLICY ENGINE)
+
+### 1. Nguyên nhân lỗi dữ liệu hiển thị `(0 HS)`
+- **Tại [Tuition.jsx](file:///c:/Users/phuon/OneDrive/Documents/Desktop/tuan/New%20folder%20(2)/DoAnBackEnd/frontend/src/pages/Tuition.jsx):** Khi gọi `api.get('/students?limit=500')`, Backend trả về trực tiếp một mảng `[...]`. Tuy nhiên mã code cũ cố gắng đọc qua `stRes.data?.data || stRes.data?.students`, dẫn đến mảng rỗng `[]` và hiển thị dropdown `-- Chọn học sinh (0 HS) --`, khiến quản trị viên không thể chọn học sinh để gán chính sách.
+
+### 2. Các cải tiến & liên kết dữ liệu đã hoàn tất
+1. **Sửa nạp danh sách học sinh:** Đảm bảo `allStudentsList` nhận đúng mảng 412 học sinh, tự động tải ngay khi mở trang hoặc khi mở modal.
+2. **Bộ lọc & Tìm kiếm thông minh trong Modal:**
+   - Ô tìm kiếm học sinh theo Tên hoặc Số Báo Danh (Mã HS).
+   - Bộ lọc chọn nhanh theo Lớp học (`Lớp 10A1, 10A2...`).
+   - Thẻ xem trước (Preview Card) thông tin học sinh được chọn (Tên, SBD, Lớp, SĐT phụ huynh).
+   - Các nút chọn nhanh mức giảm: `[100% (Miễn hoàn toàn)]`, `[70%]`, `[50%]`.
+3. **Đồng bộ hóa công nợ tự động (Real-time Sync):**
+   - Khi lưu chính sách mới, Backend quét toàn bộ hóa đơn chưa thanh toán (`unpaid` hoặc từng miễn 100%) của học sinh đó và tính toán lại tiền.
+   - Nếu giảm 100%: Tự động chuyển trạng thái sang `paid` với `finalAmount = 0`, không phát sinh nợ.
+   - Nếu cập nhật hoặc xóa chính sách: Tự động hoàn nguyên công nợ chính xác.
+4. **Hiển thị minh bạch trên bảng theo dõi và hóa đơn:**
+   - Bảng theo dõi học phí theo lớp: Hiển thị huy hiệu `🛡️ [Tên chính sách] (-xx%)` ngay cạnh tên học sinh.
+   - Bảng tra cứu từng học sinh: Hiển thị diện chính sách và mức giảm.
+   - Modal chi tiết học phí: Hiển thị banner an sinh giáo dục và bảng kê tiền gốc ➔ tiền giảm (-xx VNĐ) ➔ tiền thực thu.

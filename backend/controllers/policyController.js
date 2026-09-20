@@ -57,6 +57,48 @@ export const getStudentPolicies = async (req, res) => {
   }
 };
 
+// Helper: Tự động tính toán và cập nhật lại toàn bộ hóa đơn của học sinh khi có thay đổi chính sách
+const syncStudentUnpaidBills = async (studentId) => {
+  try {
+    const allPolicies = await prisma.studentPolicy.findMany({
+      where: { studentId, status: 'ACTIVE' }
+    });
+
+    // Tìm các hóa đơn chưa nộp hoặc từng được miễn 100% để tái tính toán
+    const targetBills = await prisma.feeBill.findMany({
+      where: {
+        studentId,
+        OR: [
+          { status: 'unpaid' },
+          { finalAmount: 0 }
+        ]
+      },
+      include: { feeProfile: true, transactions: true }
+    });
+
+    for (const bill of targetBills) {
+      const baseAmount = bill.originalAmount || bill.feeProfile?.amount || 0;
+      const calc = calculateStudentTuition(baseAmount, allPolicies);
+      const isFullExempt = calc.finalAmount === 0;
+      const hasRealTransaction = bill.transactions && bill.transactions.length > 0;
+
+      await prisma.feeBill.update({
+        where: { id: bill.id },
+        data: {
+          originalAmount: baseAmount,
+          discountAmount: calc.discountAmount,
+          finalAmount: calc.finalAmount,
+          appliedPolicySnapshot: calc.calculationSnapshot,
+          status: isFullExempt || hasRealTransaction ? 'paid' : 'unpaid',
+          paidAt: isFullExempt || hasRealTransaction ? (bill.paidAt || new Date()) : null
+        }
+      });
+    }
+  } catch (err) {
+    console.error('Error syncing student unpaid bills with policy:', err);
+  }
+};
+
 /**
  * Thêm mới chính sách ưu tiên cho học sinh
  */
@@ -98,9 +140,12 @@ export const createStudentPolicy = async (req, res) => {
       }
     });
 
+    // Tự động gạch nợ / giảm trừ tức thì cho các hóa đơn chưa nộp hiện tại của học sinh
+    await syncStudentUnpaidBills(studentId);
+
     res.status(201).json({
       success: true,
-      message: 'Thêm chính sách miễn giảm thành công',
+      message: 'Thêm chính sách miễn giảm thành công và đã tự động cập nhật công nợ học sinh',
       data: newPolicy
     });
   } catch (error) {
@@ -143,9 +188,12 @@ export const updateStudentPolicy = async (req, res) => {
       }
     });
 
+    // Cập nhật lại công nợ
+    await syncStudentUnpaidBills(updated.studentId);
+
     res.json({
       success: true,
-      message: 'Cập nhật chính sách thành công',
+      message: 'Cập nhật chính sách thành công và đã đồng bộ lại công nợ',
       data: updated
     });
   } catch (error) {
@@ -160,8 +208,12 @@ export const updateStudentPolicy = async (req, res) => {
 export const deleteStudentPolicy = async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.studentPolicy.delete({ where: { id } });
-    res.json({ success: true, message: 'Xóa chính sách thành công' });
+    const existing = await prisma.studentPolicy.findUnique({ where: { id } });
+    if (existing) {
+      await prisma.studentPolicy.delete({ where: { id } });
+      await syncStudentUnpaidBills(existing.studentId);
+    }
+    res.json({ success: true, message: 'Xóa chính sách thành công và đã hoàn nguyên công nợ' });
   } catch (error) {
     console.error('Error deleting student policy:', error);
     res.status(500).json({ success: false, message: 'Lỗi server khi xóa chính sách' });
