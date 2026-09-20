@@ -10,10 +10,11 @@
     "db:push": "npx prisma db push --accept-data-loss",
     "dev": "nodemon server.js",
     "seed": "node seeder.js",
+    "seed:students": "node scripts/seed_40_students_per_class.js",
     "test": "node --test tests/productionAudit.test.js tests/syncOutbox.test.js",
     "worker": "node scripts/syncWorker.js",
     "sync:backfill": "node scripts/backfillStudentsToElastic.js",
-    "build": "echo \"No build step required for this backend\""
+    "build": "prisma generate"
   },
   "keywords": [],
   "author": "",
